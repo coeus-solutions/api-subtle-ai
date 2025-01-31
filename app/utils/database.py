@@ -45,15 +45,18 @@ async def save_video_metadata(video_data: Dict[str, Any]) -> Optional[Dict[str, 
         # Prepare video data according to schema
         db_video_data = {
             "uuid": video_data["uuid"],
-            "user_id": video_data.get("user_id", None),  # This should be set based on authenticated user
+            "user_id": video_data["user_id"],
             "video_url": video_data["video_url"],
+            "original_name": video_data["original_name"],
+            "duration_minutes": video_data["duration_minutes"],
+            "status": "queued"
         }
         
         # Insert data
         result = supabase.table('videos').insert(db_video_data).execute()
         return result.data[0] if result.data else None
     except Exception as e:
-        print(f"Error saving video metadata: {str(e)}")
+        logger.error(f"Error saving video metadata: {str(e)}")
         return None
 
 async def get_video_by_uuid(video_uuid: str) -> Optional[Dict[str, Any]]:
@@ -95,6 +98,7 @@ async def save_subtitle(subtitle_data: Dict[str, Any]) -> Optional[Dict[str, Any
             "video_id": subtitle_data["video_id"],
             "subtitle_url": subtitle_data["subtitle_url"],
             "format": subtitle_data.get("format", "srt"),
+            "language": subtitle_data["language"]
         }
         
         # Insert data
@@ -113,7 +117,7 @@ async def get_user_subtitles(user_id: int) -> List[Dict[str, Any]]:
     try:
         # First get the videos for the user
         videos_result = supabase.table('videos')\
-            .select('id, uuid')\
+            .select('id, uuid, original_name')\
             .eq('user_id', user_id)\
             .execute()
         
@@ -134,20 +138,22 @@ async def get_user_subtitles(user_id: int) -> List[Dict[str, Any]]:
             logger.info(f"No subtitles found for user's videos")
             return []
         
-        # Create a map of video_id to video_uuid for easy lookup
-        video_uuid_map = {video['id']: video['uuid'] for video in videos_result.data}
+        # Create a map of video_id to video info for easy lookup
+        video_info_map = {video['id']: {'uuid': video['uuid'], 'original_name': video['original_name']} for video in videos_result.data}
         
         # Format the response
         formatted_data = []
         for subtitle in subtitles_result.data:
             try:
-                video_uuid = video_uuid_map.get(subtitle['video_id'])
-                if video_uuid:
+                video_info = video_info_map.get(subtitle['video_id'])
+                if video_info:
                     formatted_item = {
                         "uuid": subtitle["uuid"],
-                        "video_uuid": video_uuid,
+                        "video_uuid": video_info['uuid'],
+                        "video_original_name": video_info['original_name'],
                         "subtitle_url": subtitle["subtitle_url"],
                         "format": subtitle.get("format", "srt"),
+                        "language": subtitle.get("language", "en"),
                         "created_at": subtitle.get("created_at"),
                         "updated_at": subtitle.get("updated_at")
                     }
@@ -195,8 +201,8 @@ async def get_subtitle_by_uuid(subtitle_uuid: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Error getting subtitle by UUID: {str(e)}")
         return None
 
-async def get_user_videos(user_id: int) -> List[Dict[str, Any]]:
-    """Get all videos for a user."""
+async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List[Dict[str, Any]]:
+    """Get all videos for a user with optional subtitle information."""
     try:
         # Get videos for the user
         result = supabase.table('videos')\
@@ -216,10 +222,32 @@ async def get_user_videos(user_id: int) -> List[Dict[str, Any]]:
                 formatted_item = {
                     "uuid": str(video["uuid"]),
                     "video_url": video["video_url"],
+                    "original_name": video.get("original_name"),
+                    "duration_minutes": video.get("duration_minutes", 0),
                     "status": video.get("status", "queued"),
                     "created_at": video.get("created_at"),
-                    "updated_at": video.get("updated_at")
+                    "updated_at": video.get("updated_at"),
+                    "has_subtitles": False,
+                    "subtitle_languages": []
                 }
+
+                if include_subtitles:
+                    # Get subtitles for this video
+                    subtitles_result = supabase.table('subtitles')\
+                        .select('*')\
+                        .eq('video_id', video["id"])\
+                        .execute()
+                    
+                    if subtitles_result.data:
+                        formatted_item["has_subtitles"] = True
+                        formatted_item["subtitle_languages"] = list(set(sub["language"] for sub in subtitles_result.data))
+                        formatted_item["subtitles"] = [{
+                            "uuid": str(sub["uuid"]),
+                            "language": sub["language"],
+                            "subtitle_url": sub["subtitle_url"],
+                            "created_at": sub.get("created_at")
+                        } for sub in subtitles_result.data]
+
                 formatted_data.append(formatted_item)
             except KeyError as ke:
                 logger.error(f"Missing key in video data: {str(ke)}")
@@ -231,4 +259,66 @@ async def get_user_videos(user_id: int) -> List[Dict[str, Any]]:
         return formatted_data
     except Exception as e:
         logger.error(f"Error getting user videos: {str(e)}")
-        return [] 
+        return []
+
+async def update_user_usage(user_id: int, minutes: float, cost: float) -> bool:
+    """Update user's usage statistics."""
+    try:
+        # Get current user stats
+        user_result = supabase.table('users').select('minutes_consumed, free_minutes_used, total_cost').eq('id', user_id).execute()
+        if not user_result.data:
+            logger.error(f"No user found with ID: {user_id}")
+            return False
+            
+        user = user_result.data[0]
+        current_minutes = float(user.get('minutes_consumed', 0))
+        current_free_minutes = float(user.get('free_minutes_used', 0))
+        current_total_cost = float(user.get('total_cost', 0))
+        
+        # Calculate new values
+        new_minutes = current_minutes + minutes
+        new_free_minutes = min(current_free_minutes + minutes, 50.0)  # Cap at 50 free minutes
+        new_total_cost = current_total_cost + (max(0, (current_free_minutes + minutes) - 50.0) * 0.10)  # Only charge after 50 minutes
+        
+        # Update user stats
+        result = supabase.table('users').update({
+            'minutes_consumed': new_minutes,
+            'free_minutes_used': new_free_minutes,
+            'total_cost': new_total_cost,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('id', user_id).execute()
+        
+        return bool(result.data)
+    except Exception as e:
+        logger.error(f"Error updating user usage: {str(e)}")
+        return False
+
+async def get_user_details(user_id: int) -> Optional[Dict[str, Any]]:
+    """Get detailed user information including usage statistics."""
+    try:
+        result = supabase.table('users').select('*').eq('id', user_id).execute()
+        if not result.data:
+            return None
+            
+        user = result.data[0]
+        minutes_consumed = float(user.get('minutes_consumed', 0))
+        free_minutes_used = float(user.get('free_minutes_used', 0))
+        total_cost = float(user.get('total_cost', 0))
+        
+        # Calculate remaining free minutes
+        free_minutes_remaining = max(0, 50.0 - free_minutes_used)  # 50 minutes = $5.00 at $0.10/minute
+        
+        return {
+            "email": user["email"],
+            "minutes_consumed": minutes_consumed,
+            "free_minutes_used": free_minutes_used,
+            "total_cost": total_cost,
+            "minutes_remaining": free_minutes_remaining,
+            "cost_per_minute": 0.10,
+            "free_minutes_allocation": 50.0,
+            "created_at": user.get("created_at"),
+            "updated_at": user.get("updated_at")
+        }
+    except Exception as e:
+        logger.error(f"Error getting user details: {str(e)}")
+        return None 

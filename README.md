@@ -1,14 +1,15 @@
-# Video Analyzer API
+# SubtleAI API
 
-A FastAPI backend system for video analysis and subtitle generation using AI.
+A FastAPI backend system for AI-powered video subtitle generation and management.
 
 ## Features
 
 - User authentication with JWT
 - Video upload and management
 - AI-powered subtitle generation using OpenAI's Whisper
-- Activity logging
+- Multi-language subtitle support (English, German, Spanish, French, Japanese)
 - Secure file storage using Supabase
+- Usage tracking and free tier management (50 free minutes)
 
 ## Prerequisites
 
@@ -63,17 +64,17 @@ uvicorn main:app --reload
 - POST `/api/v1/auth/login`: Login and get JWT token
 
 ### Videos
-- POST `/api/v1/videos`: Upload a video
+- POST `/api/v1/videos/upload`: Upload a video (supports MP4, WebM, WAV)
 - GET `/api/v1/videos`: List all videos
-- DELETE `/api/v1/videos/{video_uuid}`: Delete a video
+- DELETE `/api/v1/videos/{video_uuid}`: Delete a video and its subtitles
 - POST `/api/v1/videos/{video_uuid}/generate_subtitles`: Generate subtitles for a video
 
 ### Subtitles
 - GET `/api/v1/subtitles`: List all subtitles
 - GET `/api/v1/subtitles/{subtitle_uuid}`: Download a subtitle file
 
-### Logs
-- GET `/api/v1/logs`: Get activity logs
+### Users
+- GET `/api/v1/users/me`: Get current user details and usage statistics
 
 ## Database Schema
 
@@ -84,6 +85,9 @@ The application uses Supabase with the following tables:
    - uuid (uuid)
    - email (string, unique)
    - password_hash (string)
+   - minutes_consumed (decimal)
+   - free_minutes_used (decimal)
+   - total_cost (decimal)
    - created_at (timestamp)
    - updated_at (timestamp)
 
@@ -92,6 +96,8 @@ The application uses Supabase with the following tables:
    - uuid (uuid)
    - user_id (int, foreign key)
    - video_url (string)
+   - original_name (string)
+   - duration_minutes (decimal)
    - status (string)
    - created_at (timestamp)
    - updated_at (timestamp)
@@ -102,15 +108,21 @@ The application uses Supabase with the following tables:
    - video_id (int, foreign key)
    - subtitle_url (string)
    - format (string)
+   - language (string)
    - created_at (timestamp)
    - updated_at (timestamp)
 
-4. Logs
-   - id (int, primary key)
-   - uuid (uuid)
-   - user_id (int, foreign key)
-   - action (string)
-   - created_at (timestamp)
+## File Restrictions
+
+- Supported formats: MP4, WebM, WAV
+- Maximum file size: 20MB
+- Maximum video duration: 60 minutes
+
+## Pricing
+
+- First 50 minutes of video processing are free
+- After free tier: $0.10 per minute
+- Cost is calculated based on video duration
 
 ## Security
 
@@ -118,7 +130,7 @@ The application uses Supabase with the following tables:
 - Password hashing using bcrypt
 - Input validation and sanitization
 - Protected API endpoints
-- Secure file storage
+- Secure file storage with Supabase
 
 ## Contributing
 

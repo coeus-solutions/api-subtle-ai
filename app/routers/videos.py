@@ -5,16 +5,21 @@ import os
 import uuid
 from datetime import datetime
 import logging
+import tempfile
 from app.core.config import settings
 from app.services.subtitle_service import subtitle_service
-from app.utils.s3 import get_s3_client
+from app.utils.s3 import upload_file, delete_file, get_file_url, download_file
+from app.utils.video import validate_video_duration
 from app.utils.database import (
     save_video_metadata,
     get_video_by_uuid,
     update_video_status,
     delete_video_metadata,
     save_subtitle,
-    get_user_videos
+    get_user_videos,
+    get_user_details,
+    update_user_usage,
+    get_user_subtitles
 )
 from app.routers.auth import get_current_user
 from app.models.models import (
@@ -22,7 +27,8 @@ from app.models.models import (
     SubtitleGenerationResponse, 
     VideoDeleteResponse,
     VideoListResponse,
-    VideoResponse
+    VideoResponse,
+    SubtitleGenerationRequest
 )
 
 # Set up logging
@@ -35,10 +41,24 @@ async def upload_video(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload a video file to Supabase storage."""
-    s3_client = None
+    """
+    Upload a video file for subtitle generation.
+    
+    - Validates video format and size
+    - Checks video duration
+    - Validates remaining free minutes
+    - Maximum duration: 60 minutes
+    - Cost: $0.10 per minute
+    - First 50 minutes (worth $5.00) are free
+    
+    Returns:
+        - Video UUID and URL
+        - Video duration in minutes
+        - Estimated processing cost
+    """
     content = None
-    file_path = None    
+    file_path = None
+    temp_file = None
 
     try:
         # Validate file exists
@@ -62,14 +82,54 @@ async def upload_video(
         if len(content) > settings.MAX_VIDEO_SIZE:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File size exceeds maximum allowed size of {settings.MAX_VIDEO_SIZE} bytes"
+                detail=f"File size exceeds maximum allowed size of 20MB. Your file size: {len(content) / (1024 * 1024):.2f}MB"
             )
         
         # Validate file type
         if file.content_type not in settings.ALLOWED_VIDEO_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File type {file.content_type} not allowed. Allowed types: {settings.ALLOWED_VIDEO_TYPES}"
+                detail=f"File type '{file.content_type}' not allowed. Allowed types: MP4, WebM, and WAV"
+            )
+        
+        # Save to temporary file for duration validation
+        try:
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1])
+            temp_file.write(content)
+            temp_file.close()
+            
+            # Validate duration and estimate cost
+            is_valid, duration, estimated_cost = validate_video_duration(temp_file.name)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Video duration ({duration:.2f} minutes) exceeds maximum allowed duration of {settings.MAX_VIDEO_DURATION_MINUTES} minutes"
+                )
+            
+            logger.info(f"Video duration: {duration:.2f} minutes, estimated cost: ${estimated_cost:.2f}")
+
+            # Check user's remaining free minutes
+            user_details = await get_user_details(current_user["id"])
+            if not user_details:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User details not found"
+                )
+            
+            minutes_remaining = user_details["minutes_remaining"]
+            if minutes_remaining < duration and estimated_cost > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=f"Insufficient free minutes. You have {minutes_remaining:.2f} minutes remaining, but the video is {duration:.2f} minutes long. Please upgrade your account or use a shorter video."
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error validating video duration: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Error validating video duration"
             )
         
         # Generate unique filename and UUID
@@ -86,23 +146,14 @@ async def upload_video(
             )
         
         # Upload to Supabase storage
-        try:
-            s3_client = get_s3_client()
-            s3_client.put_object(
-                Bucket=settings.STORAGE_BUCKET,
-                Key=file_path,
-                Body=content,
-                ContentType=file.content_type
-            )
-        except Exception as e:
-            logger.error(f"Error uploading to storage: {str(e)}")
+        if not upload_file(file_path, content, file.content_type):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error uploading to storage: {str(e)}"
+                detail="Failed to upload video file"
             )
         
         # Generate public URL
-        file_url = f"{settings.SUPABASE_STORAGE_URL}/object/public/{settings.STORAGE_BUCKET}/{file_path}"
+        file_url = get_file_url(file_path)
         
         # Save video metadata to database
         try:
@@ -110,35 +161,21 @@ async def upload_video(
                 "uuid": video_uuid,
                 "user_id": current_user["id"],
                 "video_url": file_url,
+                "original_name": file.filename,
+                "duration_minutes": duration
             }            
 
             saved_video = await save_video_metadata(video_data)
             if not saved_video:
                 # Clean up uploaded file if database save fails
-                if s3_client and file_path:
-                    try:
-                        s3_client.delete_object(
-                            Bucket=settings.STORAGE_BUCKET,
-                            Key=file_path
-                        )
-                    except Exception as e:
-                        logger.error(f"Error cleaning up file after failed metadata save: {str(e)}")
-                
+                delete_file(file_path)
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to save video metadata"
                 )
         except Exception as e:
             # Clean up uploaded file if database save fails
-            if s3_client and file_path:
-                try:
-                    s3_client.delete_object(
-                        Bucket=settings.STORAGE_BUCKET,
-                        Key=file_path
-                    )
-                except Exception as cleanup_error:
-                    logger.error(f"Error cleaning up file after failed metadata save: {str(cleanup_error)}")
-            
+            delete_file(file_path)
             logger.error(f"Error saving video metadata: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -149,7 +186,11 @@ async def upload_video(
             message="Video uploaded successfully",
             video_uuid=video_uuid,
             file_url=file_url,
-            status="queued"
+            original_name=file.filename,
+            status="queued",
+            duration_minutes=round(duration, 2),
+            estimated_cost=round(estimated_cost, 2),
+            detail=f"Estimated processing cost: ${estimated_cost:.2f} for {duration:.2f} minutes ({minutes_remaining:.2f} free minutes remaining)"
         )
         
     except HTTPException as he:
@@ -161,16 +202,38 @@ async def upload_video(
             detail=f"An unexpected error occurred: {str(e)}"
         )
     finally:
-        # Clean up the file content from memory
+        # Clean up temporary files
+        if temp_file and os.path.exists(temp_file.name):
+            try:
+                os.unlink(temp_file.name)
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary file: {str(e)}")
         if content:
             del content
 
 @router.post("/{video_uuid}/generate_subtitles", response_model=SubtitleGenerationResponse, status_code=status.HTTP_200_OK)
 async def generate_subtitles(
     video_uuid: str,
+    request: SubtitleGenerationRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Generate subtitles for a specific video."""
+    """
+    Generate subtitles for a specific video.
+    
+    - Supports multiple languages through OpenAI's Whisper API
+    - Cost: $0.10 per minute of video
+    - First 50 minutes (worth $5.00) are free
+    - Returns subtitle file in SRT format
+    
+    Parameters:
+        - video_uuid: UUID of the uploaded video
+        - language: Target language code (e.g., "en" for English, "es" for Spanish)
+    
+    Returns:
+        - Subtitle UUID and URL
+        - Processing status
+        - Video duration and actual cost
+    """
     try:
         # Validate UUID format
         try:
@@ -211,10 +274,47 @@ async def generate_subtitles(
             )
         
         try:
+            # Get video duration for cost tracking
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            try:
+                # Extract file path from video URL
+                video_url = video["video_url"]
+                # Get everything after /video-analyzer/ in the URL
+                file_path = video_url.split(f"{settings.STORAGE_BUCKET}/")[-1]
+                
+                logger.info(f"Downloading video from path: {file_path}")
+                
+                # Download video to get duration
+                if not download_file(file_path, temp_file.name):
+                    raise Exception("Failed to download video for duration check")
+                
+                _, duration, processing_cost = validate_video_duration(temp_file.name)
+                logger.info(f"Processing video duration: {duration:.2f} minutes, cost: ${processing_cost:.2f}")
+                
+                # Check user's remaining free minutes
+                user_details = await get_user_details(current_user["id"])
+                if not user_details:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="User details not found"
+                    )
+                
+                minutes_remaining = user_details["minutes_remaining"]
+                if minutes_remaining < duration and processing_cost > 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail=f"Insufficient free minutes. You have {minutes_remaining:.2f} minutes remaining, but the video is {duration:.2f} minutes long. Please upgrade your account or use a shorter video."
+                    )
+                
+            finally:
+                if temp_file and os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
+            
             # Generate subtitles
             subtitle_result = await subtitle_service.generate_subtitles(
                 video_url=video["video_url"],
-                video_uuid=video_uuid
+                video_uuid=video_uuid,
+                language=request.language
             )
             
             if not subtitle_result or "subtitle_url" not in subtitle_result:
@@ -228,7 +328,8 @@ async def generate_subtitles(
                 "uuid": str(uuid.uuid4()),
                 "video_id": video["id"],
                 "subtitle_url": subtitle_result["subtitle_url"],
-                "format": "srt"
+                "format": "srt",
+                "language": request.language.value
             }
             
             saved_subtitle = await save_subtitle(subtitle_data)
@@ -237,6 +338,10 @@ async def generate_subtitles(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to save subtitle metadata"
                 )
+            
+            # Update user's usage statistics
+            if not await update_user_usage(current_user["id"], duration, processing_cost):
+                logger.error(f"Failed to update usage statistics for user {current_user['id']}")
             
             # Update video status to completed
             if not await update_video_status(video_uuid, "completed"):
@@ -247,7 +352,11 @@ async def generate_subtitles(
                 video_uuid=video_uuid,
                 subtitle_uuid=subtitle_data["uuid"],
                 subtitle_url=subtitle_result["subtitle_url"],
-                status="completed"
+                language=request.language,
+                status="completed",
+                duration_minutes=round(duration, 2),
+                processing_cost=round(processing_cost, 2),
+                detail=f"Successfully generated {request.language} subtitles. Cost: ${processing_cost:.2f} for {duration:.2f} minutes"
             )
             
         except HTTPException:
@@ -303,26 +412,23 @@ async def delete_video(
         
         # Delete from storage
         try:
-            s3_client = get_s3_client()
-            
             # Extract file path from video URL
-            file_path = video["video_url"].split("/")[-1]
+            video_path = video["video_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
+            logger.info(f"Attempting to delete video file: {video_path}")
             
             # Delete video file
-            s3_client.delete_object(
-                Bucket=settings.STORAGE_BUCKET,
-                Key=file_path
-            )
+            if not delete_file(video_path):
+                logger.error(f"Failed to delete video file from storage: {video_path}")
             
-            # Try to delete subtitle file if it exists
-            subtitle_path = f"subtitles/{os.path.splitext(os.path.basename(file_path))[0]}.srt"
-            try:
-                s3_client.delete_object(
-                    Bucket=settings.STORAGE_BUCKET,
-                    Key=subtitle_path
-                )
-            except Exception as e:
-                logger.warning(f"Error deleting subtitle file: {str(e)}")
+            # Get all subtitles for this video from database
+            subtitles = await get_user_subtitles(current_user["id"])
+            if subtitles:
+                for subtitle in subtitles:
+                    if subtitle["video_uuid"] == video_uuid:
+                        subtitle_path = subtitle["subtitle_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
+                        logger.info(f"Attempting to delete subtitle file: {subtitle_path}")
+                        if not delete_file(subtitle_path):
+                            logger.warning(f"Failed to delete subtitle file from storage: {subtitle_path}")
             
         except Exception as e:
             logger.error(f"Error deleting files from storage: {str(e)}")
@@ -354,8 +460,16 @@ async def delete_video(
         )
 
 @router.get("/", response_model=VideoListResponse, status_code=status.HTTP_200_OK)
-async def list_videos(current_user: dict = Depends(get_current_user)):
-    """Get all videos for the current user."""
+async def list_videos(
+    include_subtitles: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get all videos for the current user.
+    
+    Parameters:
+        - include_subtitles: If True, includes detailed subtitle information for each video
+    """
     try:
         # Validate user ID
         user_id = current_user.get("id")
@@ -367,7 +481,7 @@ async def list_videos(current_user: dict = Depends(get_current_user)):
             )
         
         # Get all videos for the user
-        videos = await get_user_videos(user_id)
+        videos = await get_user_videos(user_id, include_subtitles)
         
         # Log the number of videos found
         logger.info(f"Found {len(videos)} videos for user {user_id}")
