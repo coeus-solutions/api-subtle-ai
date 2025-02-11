@@ -16,6 +16,7 @@ class SupportedLanguage(str, Enum):
     SPANISH = "es"
     FRENCH = "fr"
     JAPANESE = "ja"
+    RUSSIAN = "ru"
 
     @classmethod
     def get_language_name(cls, code: str) -> str:
@@ -25,7 +26,8 @@ class SupportedLanguage(str, Enum):
             "de": "German",
             "es": "Spanish",
             "fr": "French",
-            "ja": "Japanese"
+            "ja": "Japanese",
+            "ru" : "Russian"
         }
         return names.get(code, code)
 
