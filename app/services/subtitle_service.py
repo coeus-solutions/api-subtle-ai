@@ -19,7 +19,8 @@ class SubtitleService:
             "de": "German",
             "es": "Spanish",
             "fr": "French",
-            "ja": "Japanese"
+            "ja": "Japanese",
+            "ru": "Russian"
         }
     
     def _extract_file_path_from_url(self, url: str) -> str:
