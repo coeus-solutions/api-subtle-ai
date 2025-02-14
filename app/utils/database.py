@@ -49,6 +49,7 @@ async def save_video_metadata(video_data: Dict[str, Any]) -> Optional[Dict[str, 
             "video_url": video_data["video_url"],
             "original_name": video_data["original_name"],
             "duration_minutes": video_data["duration_minutes"],
+            "language": video_data.get("language", "en"),
             "status": "queued"
         }
         
@@ -321,4 +322,26 @@ async def get_user_details(user_id: int) -> Optional[Dict[str, Any]]:
         }
     except Exception as e:
         logger.error(f"Error getting user details: {str(e)}")
-        return None 
+        return None
+
+async def update_video_dubbing(video_uuid: str, dubbing_data: Dict[str, Any]) -> bool:
+    """Update video dubbing information."""
+    try:
+        # Prepare update data
+        update_data = {
+            "dubbed_video_url": dubbing_data.get("dubbed_video_url"),
+            "dubbing_id": dubbing_data.get("dubbing_id"),
+            "is_dubbed_audio": dubbing_data.get("is_dubbed_audio", False)
+        }
+        
+        # Update video record
+        result = supabase.table('videos').update(update_data).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating video dubbing info for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating video dubbing info: {str(e)}")
+        return False 

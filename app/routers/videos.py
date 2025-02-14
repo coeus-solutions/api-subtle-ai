@@ -8,6 +8,7 @@ import logging
 import tempfile
 from app.core.config import settings
 from app.services.subtitle_service import subtitle_service
+from app.services.dubbing_service import dubbing_service
 from app.utils.s3 import upload_file, delete_file, get_file_url, download_file
 from app.utils.video import validate_video_duration
 from app.utils.database import (
@@ -19,7 +20,8 @@ from app.utils.database import (
     get_user_videos,
     get_user_details,
     update_user_usage,
-    get_user_subtitles
+    get_user_subtitles,
+    update_video_dubbing
 )
 from app.routers.auth import get_current_user
 from app.models.models import (
@@ -28,8 +30,10 @@ from app.models.models import (
     VideoDeleteResponse,
     VideoListResponse,
     VideoResponse,
-    SubtitleGenerationRequest
+    SubtitleGenerationRequest,
+    DubbingResponse
 )
+import json
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -162,7 +166,8 @@ async def upload_video(
                 "user_id": current_user["id"],
                 "video_url": file_url,
                 "original_name": file.filename,
-                "duration_minutes": duration
+                "duration_minutes": duration,
+                "language": request.language.value  # Add language from request
             }            
 
             saved_video = await save_video_metadata(video_data)
@@ -211,7 +216,7 @@ async def upload_video(
         if content:
             del content
 
-@router.post("/{video_uuid}/generate_subtitles", response_model=SubtitleGenerationResponse, status_code=status.HTTP_200_OK)
+@router.post("/{video_uuid}/generate_subtitles", status_code=status.HTTP_200_OK)
 async def generate_subtitles(
     video_uuid: str,
     request: SubtitleGenerationRequest,
@@ -221,6 +226,7 @@ async def generate_subtitles(
     Generate subtitles for a specific video.
     
     - Supports multiple languages through OpenAI's Whisper API
+    - Optional video dubbing through ElevenLabs API
     - Cost: $0.10 per minute of video
     - First 50 minutes (worth $5.00) are free
     - Returns subtitle file in SRT format
@@ -228,11 +234,13 @@ async def generate_subtitles(
     Parameters:
         - video_uuid: UUID of the uploaded video
         - language: Target language code (e.g., "en" for English, "es" for Spanish)
+        - enable_dubbing: Whether to enable video dubbing (optional)
     
     Returns:
         - Subtitle UUID and URL
         - Processing status
         - Video duration and actual cost
+        - Dubbing information (if enabled)
     """
     try:
         # Validate UUID format
@@ -259,11 +267,11 @@ async def generate_subtitles(
                 detail="Not authorized to generate subtitles for this video"
             )
         
-        # Check if video is in a valid state for subtitle generation
+        # Check if video is in a valid state for processing
         if video["status"] not in ["queued", "uploaded", "failed"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot generate subtitles for video in '{video['status']}' status"
+                detail=f"Cannot process video in '{video['status']}' status"
             )
         
         # Update video status to processing
@@ -279,7 +287,6 @@ async def generate_subtitles(
             try:
                 # Extract file path from video URL
                 video_url = video["video_url"]
-                # Get everything after /video-analyzer/ in the URL
                 file_path = video_url.split(f"{settings.STORAGE_BUCKET}/")[-1]
                 
                 logger.info(f"Downloading video from path: {file_path}")
@@ -310,64 +317,115 @@ async def generate_subtitles(
                 if temp_file and os.path.exists(temp_file.name):
                     os.unlink(temp_file.name)
             
-            # Generate subtitles
-            subtitle_result = await subtitle_service.generate_subtitles(
-                video_url=video["video_url"],
-                video_uuid=video_uuid,
-                language=request.language
-            )
-            
-            if not subtitle_result or "subtitle_url" not in subtitle_result:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to generate subtitles"
+            # Choose processing flow based on dubbing flag
+            if request.enable_dubbing:
+                # Dubbing Flow
+                logger.info(f"Starting dubbing flow for video {video_uuid} in language {request.language.value}")
+
+                # Create dubbing job using video's saved language
+                dubbing_result = await dubbing_service.create_dubbing(
+                    video_url=video["video_url"],
+                    source_lang="auto",  # Auto-detect source language
+                    target_lang=video["language"]  # Use language from video record
                 )
-            
-            # Save subtitle metadata
-            subtitle_data = {
-                "uuid": str(uuid.uuid4()),
-                "video_id": video["id"],
-                "subtitle_url": subtitle_result["subtitle_url"],
-                "format": "srt",
-                "language": request.language.value
-            }
-            
-            saved_subtitle = await save_subtitle(subtitle_data)
-            if not saved_subtitle:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to save subtitle metadata"
+                
+                if not dubbing_result or "dubbing_id" not in dubbing_result:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to create dubbing job"
+                    )
+                
+                # Update video with dubbing information
+                dubbing_info = {
+                    "dubbing_id": dubbing_result["dubbing_id"],
+                    "is_dubbed_audio": False  # Will be set to True when polling completes
+                }
+                
+                if not await update_video_dubbing(video_uuid, dubbing_info):
+                    logger.error(f"Failed to update video dubbing info for {video_uuid}")
+                
+                # Update video status to processing
+                if not await update_video_status(video_uuid, "processing"):
+                    logger.warning(f"Failed to update video status for video {video_uuid}")
+                
+                # Update user's usage statistics
+                if not await update_user_usage(current_user["id"], duration, processing_cost):
+                    logger.error(f"Failed to update usage statistics for user {current_user['id']}")
+                
+                return SubtitleGenerationResponse(
+                    message="Video dubbing initiated successfully",
+                    video_uuid=video_uuid,
+                    dubbing_id=dubbing_result["dubbing_id"],
+                    language=request.language,
+                    status="processing",
+                    duration_minutes=round(duration, 2),
+                    processing_cost=round(processing_cost, 2),
+                    expected_duration_sec=dubbing_result.get("expected_duration_sec"),
+                    detail=f"Dubbing job created successfully. Use the polling endpoint to check status."
                 )
-            
-            # Update user's usage statistics
-            if not await update_user_usage(current_user["id"], duration, processing_cost):
-                logger.error(f"Failed to update usage statistics for user {current_user['id']}")
-            
-            # Update video status to completed
-            if not await update_video_status(video_uuid, "completed"):
-                logger.warning(f"Failed to update video status to completed for video {video_uuid}")
-            
-            return SubtitleGenerationResponse(
-                message="Subtitles generated successfully",
-                video_uuid=video_uuid,
-                subtitle_uuid=subtitle_data["uuid"],
-                subtitle_url=subtitle_result["subtitle_url"],
-                language=request.language,
-                status="completed",
-                duration_minutes=round(duration, 2),
-                processing_cost=round(processing_cost, 2),
-                detail=f"Successfully generated {request.language} subtitles. Cost: ${processing_cost:.2f} for {duration:.2f} minutes"
-            )
+                
+            else:
+                # Subtitle Generation Flow
+                logger.info(f"Starting subtitle generation flow for video {video_uuid} in language {request.language.value}")
+                
+                # Generate subtitles
+                subtitle_result = await subtitle_service.generate_subtitles(
+                    video_url=video["video_url"],
+                    video_uuid=video_uuid,
+                    language=request.language.value
+                )
+                
+                if not subtitle_result or "subtitle_url" not in subtitle_result:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to generate subtitles"
+                    )
+                
+                # Save subtitle metadata
+                subtitle_data = {
+                    "uuid": str(uuid.uuid4()),
+                    "video_id": video["id"],
+                    "subtitle_url": subtitle_result["subtitle_url"],
+                    "format": "srt",
+                    "language": request.language.value
+                }
+                
+                saved_subtitle = await save_subtitle(subtitle_data)
+                if not saved_subtitle:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to save subtitle metadata"
+                    )
+                
+                # Update video status to completed
+                if not await update_video_status(video_uuid, "completed"):
+                    logger.warning(f"Failed to update video status to completed for video {video_uuid}")
+                
+                # Update user's usage statistics
+                if not await update_user_usage(current_user["id"], duration, processing_cost):
+                    logger.error(f"Failed to update usage statistics for user {current_user['id']}")
+                
+                return SubtitleGenerationResponse(
+                    message="Subtitles generated successfully",
+                    video_uuid=video_uuid,
+                    subtitle_uuid=subtitle_data["uuid"],
+                    subtitle_url=subtitle_result["subtitle_url"],
+                    language=request.language,
+                    status="completed",
+                    duration_minutes=round(duration, 2),
+                    processing_cost=round(processing_cost, 2),
+                    detail=f"Successfully generated {request.language.value} subtitles. Cost: ${processing_cost:.2f} for {duration:.2f} minutes"
+                )
             
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error generating subtitles: {str(e)}")
+            logger.error(f"Error processing video: {str(e)}")
             # Update video status to failed
             await update_video_status(video_uuid, "failed")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to generate subtitles: {str(e)}"
+                detail=f"Failed to process video: {str(e)}"
             )
             
     except HTTPException:
@@ -499,4 +557,163 @@ async def list_videos(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve videos: {str(e)}"
+        )
+
+@router.get("/{video_uuid}/dubbing/{dubbing_id}", response_model=DubbingResponse, status_code=status.HTTP_200_OK)
+async def check_dubbing_status(
+    video_uuid: str,
+    dubbing_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Check the status of a dubbing job and handle the dubbed file if completed.
+    
+    - Polls ElevenLabs API for dubbing status
+    - If completed, downloads the dubbed file and uploads to Supabase
+    - Updates video record with dubbed file URL
+    
+    Parameters:
+        - video_uuid: UUID of the video
+        - dubbing_id: ID of the dubbing job from ElevenLabs
+    
+    Returns:
+        - Status of the dubbing job
+        - Dubbed file URL if completed
+        - Expected duration in seconds
+    """
+    try:
+        # Validate UUID format
+        try:
+            uuid.UUID(video_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid video UUID format"
+            )
+        
+        # Get video details from database
+        video = await get_video_by_uuid(video_uuid)
+        if not video:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video not found"
+            )
+        
+        # Check if user owns the video
+        if video["user_id"] != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to check dubbing status for this video"
+            )
+        
+        # Check if this dubbing_id matches the one stored for the video
+        if not video.get("dubbing_id") or video["dubbing_id"] != dubbing_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dubbing ID for this video"
+            )
+        
+        # Check dubbing status from ElevenLabs
+        dubbing_status = await dubbing_service.get_dubbing_status(dubbing_id)
+        if not dubbing_status:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to get dubbing status from ElevenLabs"
+            )
+        
+        logger.info(f"Dubbing status response: {json.dumps(dubbing_status, indent=2)}")
+        # Get the status from the response
+        status_value = dubbing_status.get("status", "").lower()
+        
+        # If not completed or failed, return current status
+        if status_value not in ["completed", "failed"]:
+            return DubbingResponse(
+                message="Dubbing in progress",
+                video_uuid=video_uuid,
+                dubbing_id=dubbing_id,
+                dubbed_video_url=None,
+                language=video.get("language", "en"),
+                status=status_value,
+                duration_minutes=video.get("duration_minutes", 0),
+                processing_cost=0,  # Cost already accounted for in initial request
+                detail=f"Dubbing status: {status_value}",
+                expected_duration_sec=dubbing_status.get("duration", 0)
+            )
+        
+        # If failed, update video status and return error
+        if status_value == "failed":
+            # Update video record to mark dubbing as failed
+            await update_video_dubbing(video_uuid, {
+                "dubbing_id": dubbing_id,
+                "is_dubbed_audio": False,
+                "dubbed_video_url": None
+            })
+            
+            error_detail = dubbing_status.get("error", "Unknown error")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Dubbing process failed at ElevenLabs: {error_detail}"
+            )
+        
+        # If completed and we don't have the dubbed video yet, get it
+        if not video.get("dubbed_video_url"):
+            # Get the dubbed file
+            dubbed_url = await dubbing_service.get_dubbed_audio(
+                dubbing_id=dubbing_id,
+                target_lang=video.get("language", "en"),  # Use language from video record
+                video_uuid=video_uuid
+            )
+            
+            if not dubbed_url:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to get dubbed audio file"
+                )
+            
+            # Update video record with dubbed file URL
+            dubbing_info = {
+                "dubbing_id": dubbing_id,
+                "dubbed_video_url": dubbed_url,
+                "is_dubbed_audio": True
+            }
+            
+            if not await update_video_dubbing(video_uuid, dubbing_info):
+                logger.error(f"Failed to update video dubbing info for {video_uuid}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to update video with dubbed file information"
+                )
+            
+            # Update video status to completed
+            if not await update_video_status(video_uuid, "completed"):
+                logger.warning(f"Failed to update video status to completed for video {video_uuid}")
+
+            # Get updated video data to get the correct dubbed_video_url
+            video = await get_video_by_uuid(video_uuid)
+            if not video:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Video not found after update"
+                )
+        
+        return DubbingResponse(
+            message="Dubbing completed successfully",
+            video_uuid=video_uuid,
+            dubbing_id=dubbing_id,
+            dubbed_video_url=video.get("dubbed_video_url"),
+            language=video.get("language", "en"),  # Use language from video record
+            status="completed",
+            duration_minutes=video.get("duration_minutes", 0),
+            processing_cost=0,  # Cost already accounted for in initial request
+            detail="Successfully downloaded and stored dubbed video",
+            expected_duration_sec=dubbing_status.get("duration", 0)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in check_dubbing_status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
         ) 
