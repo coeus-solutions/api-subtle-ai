@@ -81,6 +81,20 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
+class VideoUploadRequest(BaseModel):
+    """Request model for video upload endpoint."""
+    language: SupportedLanguage = Field(
+        default=SupportedLanguage.ENGLISH,
+        description="Target language for subtitle generation"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "language": "en"
+            }
+        }
+
 # Response Models
 class MessageResponse(BaseModel):
     message: str
@@ -171,6 +185,7 @@ class VideoUploadResponse(BaseModel):
     duration_minutes: Optional[float] = Field(default=None)
     estimated_cost: Optional[float] = Field(default=None)
     detail: Optional[str] = None
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
 
     _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
     _round_cost = validator('estimated_cost', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
@@ -185,16 +200,13 @@ class VideoUploadResponse(BaseModel):
                 "status": "queued",
                 "duration_minutes": 5.50,
                 "estimated_cost": 0.55,
-                "detail": "Estimated processing cost: $0.55 for 5.50 minutes"
+                "detail": "Estimated processing cost: $0.55 for 5.50 minutes",
+                "language": "en"
             }
         }
 
 class SubtitleGenerationRequest(BaseModel):
     """Request model for subtitle generation endpoint."""
-    language: SupportedLanguage = Field(
-        default=SupportedLanguage.ENGLISH,
-        description="Target language for subtitle generation. Available languages: English (en), Spanish (es), French (fr), German (de), Chinese (zh), Japanese (ja), Korean (ko), Portuguese (pt), Italian (it), Hindi (hi)"
-    )
     enable_dubbing: bool = Field(
         default=False,
         description="Whether to enable video dubbing using ElevenLabs"
@@ -203,8 +215,7 @@ class SubtitleGenerationRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "language": "es",  # Example: Request Spanish subtitles
-                "enable_dubbing": True  # Example: Enable dubbing
+                "enable_dubbing": True  # Example: Enable dubbing with video's saved language
             }
         }
 

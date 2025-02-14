@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Form
 from fastapi.responses import JSONResponse
 from typing import List
 import os
@@ -31,7 +31,9 @@ from app.models.models import (
     VideoListResponse,
     VideoResponse,
     SubtitleGenerationRequest,
-    DubbingResponse
+    DubbingResponse,
+    SupportedLanguage,
+    VideoUploadRequest
 )
 import json
 
@@ -43,6 +45,7 @@ router = APIRouter()
 @router.post("/upload", response_model=VideoUploadResponse, status_code=status.HTTP_200_OK)
 async def upload_video(
     file: UploadFile = File(...),
+    language: SupportedLanguage = Form(default=SupportedLanguage.ENGLISH),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -54,11 +57,13 @@ async def upload_video(
     - Maximum duration: 60 minutes
     - Cost: $0.10 per minute
     - First 50 minutes (worth $5.00) are free
+    - Accepts target language for future subtitle generation
     
     Returns:
         - Video UUID and URL
         - Video duration in minutes
         - Estimated processing cost
+        - Target language for subtitles
     """
     content = None
     file_path = None
@@ -167,7 +172,7 @@ async def upload_video(
                 "video_url": file_url,
                 "original_name": file.filename,
                 "duration_minutes": duration,
-                "language": request.language.value  # Add language from request
+                "language": language.value
             }            
 
             saved_video = await save_video_metadata(video_data)
@@ -195,6 +200,7 @@ async def upload_video(
             status="queued",
             duration_minutes=round(duration, 2),
             estimated_cost=round(estimated_cost, 2),
+            language=language,
             detail=f"Estimated processing cost: ${estimated_cost:.2f} for {duration:.2f} minutes ({minutes_remaining:.2f} free minutes remaining)"
         )
         
@@ -225,7 +231,7 @@ async def generate_subtitles(
     """
     Generate subtitles for a specific video.
     
-    - Supports multiple languages through OpenAI's Whisper API
+    - Uses the video's saved target language for subtitle generation
     - Optional video dubbing through ElevenLabs API
     - Cost: $0.10 per minute of video
     - First 50 minutes (worth $5.00) are free
@@ -233,7 +239,6 @@ async def generate_subtitles(
     
     Parameters:
         - video_uuid: UUID of the uploaded video
-        - language: Target language code (e.g., "en" for English, "es" for Spanish)
         - enable_dubbing: Whether to enable video dubbing (optional)
     
     Returns:
@@ -320,7 +325,7 @@ async def generate_subtitles(
             # Choose processing flow based on dubbing flag
             if request.enable_dubbing:
                 # Dubbing Flow
-                logger.info(f"Starting dubbing flow for video {video_uuid} in language {request.language.value}")
+                logger.info(f"Starting dubbing flow for video {video_uuid} in language {video['language']}")
 
                 # Create dubbing job using video's saved language
                 dubbing_result = await dubbing_service.create_dubbing(
@@ -356,7 +361,7 @@ async def generate_subtitles(
                     message="Video dubbing initiated successfully",
                     video_uuid=video_uuid,
                     dubbing_id=dubbing_result["dubbing_id"],
-                    language=request.language,
+                    language=video.get("language", "en"),
                     status="processing",
                     duration_minutes=round(duration, 2),
                     processing_cost=round(processing_cost, 2),
@@ -366,13 +371,13 @@ async def generate_subtitles(
                 
             else:
                 # Subtitle Generation Flow
-                logger.info(f"Starting subtitle generation flow for video {video_uuid} in language {request.language.value}")
+                logger.info(f"Starting subtitle generation flow for video {video_uuid} in language {video['language']}")
                 
                 # Generate subtitles
                 subtitle_result = await subtitle_service.generate_subtitles(
                     video_url=video["video_url"],
                     video_uuid=video_uuid,
-                    language=request.language.value
+                    language=video["language"]
                 )
                 
                 if not subtitle_result or "subtitle_url" not in subtitle_result:
@@ -387,7 +392,7 @@ async def generate_subtitles(
                     "video_id": video["id"],
                     "subtitle_url": subtitle_result["subtitle_url"],
                     "format": "srt",
-                    "language": request.language.value
+                    "language": video["language"]
                 }
                 
                 saved_subtitle = await save_subtitle(subtitle_data)
@@ -410,11 +415,11 @@ async def generate_subtitles(
                     video_uuid=video_uuid,
                     subtitle_uuid=subtitle_data["uuid"],
                     subtitle_url=subtitle_result["subtitle_url"],
-                    language=request.language,
+                    language=video.get("language", "en"),
                     status="completed",
                     duration_minutes=round(duration, 2),
                     processing_cost=round(processing_cost, 2),
-                    detail=f"Successfully generated {request.language.value} subtitles. Cost: ${processing_cost:.2f} for {duration:.2f} minutes"
+                    detail=f"Successfully generated {video['language']} subtitles. Cost: ${processing_cost:.2f} for {duration:.2f} minutes"
                 )
             
         except HTTPException:
