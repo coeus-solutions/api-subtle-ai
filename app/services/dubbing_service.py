@@ -107,13 +107,6 @@ class DubbingService:
                     result = await response.json()
                     logger.info(f"ElevenLabs status response: {json.dumps(result, indent=2)}")
                     
-                    # Map ElevenLabs status to our status format
-                    status_mapping = {
-                        "dubbed": "completed",
-                        "dubbing": "processing",
-                        "failed": "failed"
-                    }
-                    
                     # Get duration from media_metadata if it exists, otherwise default to 0
                     duration = 0
                     if result.get("media_metadata"):
@@ -121,7 +114,7 @@ class DubbingService:
                     
                     return {
                         "dubbing_id": result.get("dubbing_id"),
-                        "status": status_mapping.get(result.get("status", ""), "processing"),
+                        "status": result.get("status", "dubbing"),  # Use original ElevenLabs status
                         "target_languages": result.get("target_languages", []),
                         "duration": duration,
                         "error": result.get("error")
@@ -196,5 +189,45 @@ class DubbingService:
                     os.unlink(temp_file.name)
                 except Exception as e:
                     logger.error(f"Error cleaning up temporary file: {str(e)}")
+
+    async def get_transcript(self, dubbing_id: str, language_code: str, format_type: str = "srt") -> Optional[str]:
+        """
+        Get the transcript for a dubbed video from ElevenLabs.
+        
+        Args:
+            dubbing_id: The ID of the dubbing job
+            language_code: Target language code
+            format_type: Format of the subtitle file ('srt' or 'webvtt')
+            
+        Returns:
+            Transcript content as string if successful, None if failed
+        """
+        try:
+            headers = {
+                "xi-api-key": self.api_key
+            }
+            
+            # Add format_type as query parameter if specified
+            params = {"format_type": format_type} if format_type != "srt" else {}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.api_url}/{dubbing_id}/transcript/{language_code}",
+                    headers=headers,
+                    params=params
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Error getting transcript: {error_text}")
+                        return None
+                    
+                    # Get the transcript content
+                    transcript_content = await response.text()
+                    logger.info(f"Successfully retrieved transcript for dubbing {dubbing_id}")
+                    return transcript_content
+                    
+        except Exception as e:
+            logger.error(f"Error getting transcript: {str(e)}")
+            return None
 
 dubbing_service = DubbingService() 

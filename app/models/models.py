@@ -219,36 +219,66 @@ class SubtitleGenerationRequest(BaseModel):
             }
         }
 
-class DubbingResponse(BaseModel):
-    """Response model for dubbing-related endpoints."""
+class DubbingStatusResponse(BaseModel):
+    """Response model for checking dubbing status."""
     message: str
     video_uuid: str
-    dubbing_id: Optional[str] = None
-    dubbed_video_url: Optional[str] = None
+    dubbing_id: str
     language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
-    status: str  # e.g., "processing", "completed", "failed"
+    status: str = Field(
+        description="ElevenLabs dubbing status: 'dubbing' (in progress), 'dubbed' (completed), or 'failed'"
+    )
     duration_minutes: Optional[float] = Field(default=None)
-    processing_cost: Optional[float] = Field(default=None)
     detail: Optional[str] = None
     expected_duration_sec: Optional[float] = Field(default=None)
 
     _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
-    _round_cost = validator('processing_cost', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
     _round_expected_duration = validator('expected_duration_sec', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
 
     class Config:
         json_schema_extra = {
             "example": {
-                "message": "Dubbing job created successfully",
+                "message": "Dubbing status: dubbing",
+                "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "dubbing_id": "dub_123456789",
+                "language": "es",
+                "status": "dubbing",  # ElevenLabs status
+                "duration_minutes": 5.50,
+                "detail": "Current status from ElevenLabs: dubbing",
+                "expected_duration_sec": 330.0
+            }
+        }
+
+class DubbingResponse(BaseModel):
+    """Response model for getting dubbed video."""
+    message: str
+    video_uuid: str
+    dubbing_id: str
+    dubbed_video_url: str
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
+    status: str = Field(
+        default="dubbed",
+        description="ElevenLabs dubbing status: will always be 'dubbed' for successful responses"
+    )
+    duration_minutes: Optional[float] = Field(default=None)
+    processing_cost: Optional[float] = Field(default=None)
+    detail: Optional[str] = None
+
+    _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+    _round_cost = validator('processing_cost', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Dubbed video ready",
                 "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
                 "dubbing_id": "dub_123456789",
                 "dubbed_video_url": "https://example.com/storage/dubbed_videos/video.mp4",
                 "language": "es",
-                "status": "processing",
+                "status": "dubbed",  # ElevenLabs status
                 "duration_minutes": 5.50,
                 "processing_cost": 0.55,
-                "detail": "Dubbing in progress. Expected completion in 5.5 minutes",
-                "expected_duration_sec": 330.0
+                "detail": "Successfully retrieved dubbed video"
             }
         }
 

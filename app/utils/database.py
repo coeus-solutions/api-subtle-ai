@@ -207,7 +207,7 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
     try:
         # Get videos for the user
         result = supabase.table('videos')\
-            .select('*')\
+            .select('*, dubbed_video_url, dubbing_id, is_dubbed_audio')\
             .eq('user_id', user_id)\
             .order('created_at', desc=True)\
             .execute()
@@ -229,7 +229,10 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
                     "created_at": video.get("created_at"),
                     "updated_at": video.get("updated_at"),
                     "has_subtitles": False,
-                    "subtitle_languages": []
+                    "subtitle_languages": [],
+                    "dubbed_video_url": video.get("dubbed_video_url"),  # Include dubbed video URL
+                    "dubbing_id": video.get("dubbing_id"),  # Include dubbing ID
+                    "is_dubbed_audio": video.get("is_dubbed_audio", False)  # Include dubbing status
                 }
 
                 if include_subtitles:
