@@ -448,7 +448,7 @@ async def delete_video(
     video_uuid: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a video and its associated data."""
+    """Delete a video and all its associated data (subtitles and dubbed video)."""
     try:
         # Validate UUID format
         try:
@@ -474,25 +474,43 @@ async def delete_video(
                 detail="Not authorized to delete this video"
             )
         
-        # Delete from storage
+        # Delete all associated files from storage
         try:
-            # Extract file path from video URL
-            video_path = video["video_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
-            logger.info(f"Attempting to delete video file: {video_path}")
+            deleted_files = []
+            failed_files = []
             
-            # Delete video file
-            if not delete_file(video_path):
-                logger.error(f"Failed to delete video file from storage: {video_path}")
+            # 1. Delete original video file
+            if video["video_url"]:
+                video_path = video["video_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
+                logger.info(f"Attempting to delete original video file: {video_path}")
+                if delete_file(video_path):
+                    deleted_files.append("original video")
+                else:
+                    failed_files.append("original video")
             
-            # Get all subtitles for this video from database
+            # 2. Delete dubbed video if exists
+            if video.get("dubbed_video_url"):
+                dubbed_path = video["dubbed_video_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
+                logger.info(f"Attempting to delete dubbed video file: {dubbed_path}")
+                if delete_file(dubbed_path):
+                    deleted_files.append("dubbed video")
+                else:
+                    failed_files.append("dubbed video")
+            
+            # 3. Get and delete all subtitles for this video
             subtitles = await get_user_subtitles(current_user["id"])
             if subtitles:
                 for subtitle in subtitles:
                     if subtitle["video_uuid"] == video_uuid:
                         subtitle_path = subtitle["subtitle_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
                         logger.info(f"Attempting to delete subtitle file: {subtitle_path}")
-                        if not delete_file(subtitle_path):
-                            logger.warning(f"Failed to delete subtitle file from storage: {subtitle_path}")
+                        if delete_file(subtitle_path):
+                            deleted_files.append(f"subtitle ({subtitle.get('language', 'unknown')})")
+                        else:
+                            failed_files.append(f"subtitle ({subtitle.get('language', 'unknown')})")
+            
+            if failed_files:
+                logger.warning(f"Failed to delete some files: {', '.join(failed_files)}")
             
         except Exception as e:
             logger.error(f"Error deleting files from storage: {str(e)}")
@@ -501,7 +519,7 @@ async def delete_video(
                 detail=f"Error deleting files from storage: {str(e)}"
             )
         
-        # Delete video metadata from database
+        # Delete video metadata from database (this will cascade delete subtitles)
         if not await delete_video_metadata(video_uuid):
             logger.error("Failed to delete video metadata")
             raise HTTPException(
@@ -509,9 +527,15 @@ async def delete_video(
                 detail="Failed to delete video metadata"
             )
         
+        # Prepare success message
+        detail = f"Successfully deleted: {', '.join(deleted_files)}"
+        if failed_files:
+            detail += f". Failed to delete: {', '.join(failed_files)}"
+        
         return VideoDeleteResponse(
             message="Video and associated data deleted successfully",
-            video_uuid=video_uuid
+            video_uuid=video_uuid,
+            detail=detail
         )
         
     except HTTPException as he:
