@@ -14,7 +14,8 @@ moviepy==1.0.3  # For video duration validation
 h11>=0.14.0  # Updated for compatibility
 
 # Database and Storage
-supabase==2.0.3
+supabase==2.6.0  # Latest version with proxy support
+httpx[http2]==0.27.2  # Latest version with proper proxy support
 boto3==1.28.44
 
 # OpenAI Integration
@@ -23,9 +24,6 @@ aiohttp==3.9.1
 
 # Audio/Video Processing
 elevenlabs==1.51.0  # Latest version with proper client support
-
-# Testing
-httpx==0.27.0  # For async HTTP client in testing
 
 # Utilities
 python-dotenv==1.0.0
