@@ -6,5 +6,5 @@ if [ "$APP_ENV" = "dev" ]; then
     exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level info
 else
     echo "Starting application in production mode..."
-    exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+    exec uvicorn main:app --host 0.0.0.0 --port 8000
 fi 
