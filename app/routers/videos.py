@@ -11,6 +11,7 @@ from app.services.subtitle_service import subtitle_service
 from app.services.dubbing_service import dubbing_service
 from app.utils.s3 import upload_file, delete_file, get_file_url, download_file
 from app.utils.video import validate_video_duration
+from app.utils.video_processor import video_processor
 from app.utils.database import (
     save_video_metadata,
     get_video_by_uuid,
@@ -21,7 +22,9 @@ from app.utils.database import (
     get_user_details,
     update_user_usage,
     get_user_subtitles,
-    update_video_dubbing
+    update_video_dubbing,
+    update_video_burned_url,
+    update_video_urls, get_subtitle_by_uuid
 )
 from app.routers.auth import get_current_user
 from app.models.models import (
@@ -34,7 +37,9 @@ from app.models.models import (
     DubbingResponse,
     DubbingStatusResponse,
     SupportedLanguage,
-    VideoUploadRequest
+    VideoUploadRequest,
+    SubtitleBurningRequest,
+    SubtitleBurningResponse
 )
 import json
 
@@ -448,7 +453,7 @@ async def delete_video(
     video_uuid: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a video and all its associated data (subtitles and dubbed video)."""
+    """Delete a video and all its associated data (subtitles, dubbed video, and burned video)."""
     try:
         # Validate UUID format
         try:
@@ -496,8 +501,17 @@ async def delete_video(
                     deleted_files.append("dubbed video")
                 else:
                     failed_files.append("dubbed video")
+
+            # 3. Delete burned video if exists and is different from dubbed video
+            if video.get("burned_video_url") and video.get("burned_video_url") != video.get("dubbed_video_url"):
+                burned_path = video["burned_video_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
+                logger.info(f"Attempting to delete burned video file: {burned_path}")
+                if delete_file(burned_path):
+                    deleted_files.append("burned video")
+                else:
+                    failed_files.append("burned video")
             
-            # 3. Get and delete all subtitles for this video
+            # 4. Get and delete all subtitles for this video
             subtitles = await get_user_subtitles(current_user["id"])
             if subtitles:
                 for subtitle in subtitles:
@@ -858,6 +872,132 @@ async def get_transcript_for_dub(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.post("/{video_uuid}/burn_subtitles", response_model=SubtitleBurningResponse, status_code=status.HTTP_200_OK)
+async def burn_subtitles(
+    video_uuid: str,
+    request: SubtitleBurningRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Burn subtitles into a video.
+    
+    - Takes a video UUID and subtitle UUID
+    - Burns the subtitles permanently into the video
+    - If video is dubbed, uses dubbed video as source and updates the same URL
+    - If video is not dubbed, uses original video and creates new burned video URL
+    
+    Parameters:
+        - video_uuid: UUID of the video
+        - subtitle_uuid: UUID of the subtitle file to burn
+    
+    Returns:
+        - Burned video URL
+        - Processing status
+        - Original video and subtitle information
+    """
+    try:
+        # Validate UUID format
+        try:
+            uuid.UUID(video_uuid)
+            uuid.UUID(request.subtitle_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid UUID format"
+            )
+        
+        # Get video details
+        video = await get_video_by_uuid(video_uuid)
+        if not video:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video not found"
+            )
+        
+        # Check if user owns the video
+        if video["user_id"] != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to process this video"
+            )
+        
+        # Get subtitle details
+        subtitle = await get_subtitle_by_uuid(request.subtitle_uuid)
+        if not subtitle:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Subtitle not found"
+            )
+        
+        # Verify subtitle belongs to this video
+        if subtitle["video_id"] != video["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Subtitle does not belong to this video"
+            )
+        
+        # Determine which video URL to use as source
+        is_dubbed = bool(video.get("dubbed_video_url"))
+        source_video_url = video.get("dubbed_video_url") if is_dubbed else video["video_url"]
+        
+        logger.info(f"Using {'dubbed' if is_dubbed else 'original'} video as source for burning subtitles")
+        logger.info(f"Source video URL: {source_video_url}")
+        
+        # Burn subtitles into video
+        processed_video_url = await video_processor.burn_subtitles(
+            video_url=source_video_url,
+            subtitle_url=subtitle["subtitle_url"],
+            video_uuid=video_uuid,
+            language=subtitle["language"]
+        )
+        
+        if not processed_video_url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to burn subtitles into video"
+            )
+        
+        # Update database based on whether the video was dubbed
+        if is_dubbed:
+            # For dubbed videos, update both dubbed_video_url and burned_video_url to the same URL
+            # Delete the old dubbed video from storage if it exists
+            if video.get("dubbed_video_url"):
+                old_dubbed_path = video["dubbed_video_url"].split(f"{settings.STORAGE_BUCKET}/")[-1]
+                if not delete_file(old_dubbed_path):
+                    logger.warning(f"Failed to delete old dubbed video: {old_dubbed_path}")
+            
+            # Update both URLs to the same value
+            if not await update_video_urls(video_uuid, processed_video_url):
+                logger.error(f"Failed to update video URLs in database for video {video_uuid}")
+        else:
+            # For non-dubbed videos, just update the burned_video_url
+            if not await update_video_burned_url(video_uuid, processed_video_url):
+                logger.error(f"Failed to update burned video URL in database for video {video_uuid}")
+        
+        # Get updated video details
+        updated_video = await get_video_by_uuid(video_uuid)
+        if not updated_video:
+            logger.error(f"Failed to get updated video details for {video_uuid}")
+        
+        return SubtitleBurningResponse(
+            message="Subtitles burned successfully",
+            video_uuid=video_uuid,
+            subtitle_uuid=request.subtitle_uuid,
+            burned_video_url=processed_video_url,
+            language=subtitle["language"],
+            status="completed",
+            detail=f"Successfully burned {subtitle['language']} subtitles into {'dubbed' if is_dubbed else 'original'} video"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error burning subtitles: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to burn subtitles: {str(e)}"
         )
 
 async def validate_video_access(video_uuid: str, dubbing_id: str, user_id: int):

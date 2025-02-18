@@ -24,6 +24,7 @@ aiohttp==3.9.1
 
 # Audio/Video Processing
 elevenlabs==1.51.0  # Latest version with proper client support
+ffmpeg-python==0.2.0  # For subtitle burning and video processing
 
 # Utilities
 python-dotenv==1.0.0

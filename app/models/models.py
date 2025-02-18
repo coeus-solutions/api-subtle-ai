@@ -288,6 +288,7 @@ class SubtitleGenerationResponse(BaseModel):
     video_uuid: str
     subtitle_uuid: Optional[str] = None
     subtitle_url: Optional[str] = None
+    processed_video_url: Optional[str] = None  # URL of video with burned subtitles
     dubbing_id: Optional[str] = None  # Added for dubbing support
     dubbed_video_url: Optional[str] = None  # Added for dubbing support
     language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
@@ -308,13 +309,14 @@ class SubtitleGenerationResponse(BaseModel):
                 "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
                 "subtitle_uuid": "987fcdeb-89ab-12d3-a456-426614174000",
                 "subtitle_url": "https://example.com/storage/subtitles/subtitle.srt",
+                "processed_video_url": "https://example.com/storage/processed_videos/video_with_subtitles.mp4",  # Added example
                 "dubbing_id": "dub_123456789",  # Only present if dubbing enabled
                 "dubbed_video_url": "https://example.com/storage/dubbed_videos/video.mp4",  # Only present if dubbing enabled
                 "language": "es",
                 "status": "completed",
                 "duration_minutes": 5.50,
                 "processing_cost": 0.55,
-                "detail": "Successfully generated Spanish subtitles. Cost: $0.55",
+                "detail": "Successfully generated Spanish subtitles and processed video. Cost: $0.55",
                 "expected_duration_sec": 330.0  # Only present if dubbing enabled
             }
         }
@@ -345,6 +347,7 @@ class VideoResponse(BaseModel):
     subtitle_languages: List[str] = []
     subtitles: Optional[List[VideoSubtitleInfo]] = None
     dubbed_video_url: Optional[str] = None
+    burned_video_url: Optional[str] = None  # URL of video with burned subtitles
     dubbing_id: Optional[str] = None
     is_dubbed_audio: bool = Field(default=False)
 
@@ -355,3 +358,39 @@ class VideoListResponse(BaseModel):
     count: int
     videos: List[VideoResponse]
     detail: Optional[str] = None 
+
+class SubtitleBurningRequest(BaseModel):
+    """Request model for burning subtitles into video."""
+    subtitle_uuid: str = Field(
+        description="UUID of the subtitle file to burn into the video"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "subtitle_uuid": "987fcdeb-89ab-12d3-a456-426614174000"
+            }
+        }
+
+class SubtitleBurningResponse(BaseModel):
+    """Response model for subtitle burning endpoint."""
+    message: str
+    video_uuid: str
+    subtitle_uuid: str
+    burned_video_url: str
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
+    status: str = "completed"
+    detail: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Subtitles burned successfully",
+                "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "subtitle_uuid": "987fcdeb-89ab-12d3-a456-426614174000",
+                "burned_video_url": "https://example.com/storage/processed_videos/video_with_subtitles.mp4",
+                "language": "en",
+                "status": "completed",
+                "detail": "Successfully burned English subtitles into video"
+            }
+        } 

@@ -207,7 +207,7 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
     try:
         # Get videos for the user
         result = supabase.table('videos')\
-            .select('*, dubbed_video_url, dubbing_id, is_dubbed_audio')\
+            .select('*, dubbed_video_url, dubbing_id, is_dubbed_audio, burned_video_url')\
             .eq('user_id', user_id)\
             .order('created_at', desc=True)\
             .execute()
@@ -231,6 +231,7 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
                     "has_subtitles": False,
                     "subtitle_languages": [],
                     "dubbed_video_url": video.get("dubbed_video_url"),  # Include dubbed video URL
+                    "burned_video_url": video.get("burned_video_url"),  # Include burned video URL
                     "dubbing_id": video.get("dubbing_id"),  # Include dubbing ID
                     "is_dubbed_audio": video.get("is_dubbed_audio", False)  # Include dubbing status
                 }
@@ -347,4 +348,41 @@ async def update_video_dubbing(video_uuid: str, dubbing_data: Dict[str, Any]) ->
         return True
     except Exception as e:
         logger.error(f"Error updating video dubbing info: {str(e)}")
+        return False
+
+async def update_video_burned_url(video_uuid: str, burned_video_url: str) -> bool:
+    """Update video's burned video URL."""
+    try:
+        result = supabase.table('videos').update({
+            'burned_video_url': burned_video_url,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating burned video URL for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating burned video URL: {str(e)}")
+        return False
+
+async def update_video_urls(video_uuid: str, processed_video_url: str) -> bool:
+    """Update both dubbed_video_url and burned_video_url for a video."""
+    try:
+        update_data = {
+            "dubbed_video_url": processed_video_url,
+            "burned_video_url": processed_video_url,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table('videos').update(update_data).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating video URLs for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating video URLs: {str(e)}")
         return False 

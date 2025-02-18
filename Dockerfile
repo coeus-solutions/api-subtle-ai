@@ -7,6 +7,10 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    libavcodec-extra \
+    libavformat-dev \
+    libavfilter-dev \
+    libass-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
