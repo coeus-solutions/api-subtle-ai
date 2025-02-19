@@ -42,6 +42,7 @@ from app.models.models import (
     SubtitleBurningResponse
 )
 import json
+import aiohttp
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -478,6 +479,17 @@ async def delete_video(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to delete this video"
             )
+        
+        # Delete dubbing project from ElevenLabs if exists
+        if video.get("dubbing_id"):
+            try:
+                logger.info(f"Deleting dubbing project {video['dubbing_id']} from ElevenLabs")
+                if not await dubbing_service.delete_dubbing(video['dubbing_id']):
+                    logger.error(f"Failed to delete dubbing project {video['dubbing_id']}")
+                    # Continue with deletion even if dubbing project deletion fails
+            except Exception as e:
+                logger.error(f"Error deleting dubbing project: {str(e)}")
+                # Continue with deletion even if dubbing project deletion fails
         
         # Delete all associated files from storage
         try:

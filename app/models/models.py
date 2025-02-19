@@ -10,13 +10,18 @@ def round_decimal(value: float) -> float:
     return round(float(value), 2)
 
 class SupportedLanguage(str, Enum):
-    """Supported languages for subtitle generation in free tier"""
+    """Supported languages for subtitle generation and dubbing"""
     ENGLISH = "en"
     GERMAN = "de"
     SPANISH = "es"
     FRENCH = "fr"
     JAPANESE = "ja"
     RUSSIAN = "ru"
+    ITALIAN = "it"
+    CHINESE = "zh"
+    TURKISH = "tr"
+    KOREAN = "ko"
+    PORTUGUESE = "pt"
 
     @classmethod
     def get_language_name(cls, code: str) -> str:
@@ -27,7 +32,12 @@ class SupportedLanguage(str, Enum):
             "es": "Spanish",
             "fr": "French",
             "ja": "Japanese",
-            "ru" : "Russian"
+            "ru": "Russian",
+            "it": "Italian",
+            "zh": "Chinese",
+            "tr": "Turkish",
+            "ko": "Korean",
+            "pt": "Portuguese"
         }
         return names.get(code, code)
 

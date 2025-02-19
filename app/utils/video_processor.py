@@ -78,12 +78,25 @@ class VideoProcessor:
                 # - Very thin white text with minimal outline
                 # - Extra tight line spacing
                 # - Subtle positioning near bottom
+                # - Font selection based on language support
+                
+                # Select appropriate font based on language
+                font_name = "Arial"  # Default font
+                
+                # Select appropriate font based on language
+                if language == "zh":  # Chinese
+                    font_name = "Noto Sans CJK SC"
+                elif language == "ja":  # Japanese
+                    font_name = "Noto Sans CJK JP"
+                elif language == "ko":  # Korean
+                    font_name = "Noto Sans CJK KR"
+                
                 stream = ffmpeg.filter(
                     stream,
                     'subtitles',
                     temp_subtitle.name,
                     force_style=(
-                        f'FontName=Arial,'
+                        f'FontName={font_name},'
                         f'FontSize={font_size},'
                         f'Bold=0,'                 # Normal weight
                         f'PrimaryColour=&HFFFFFF,'  # White text

@@ -20,7 +20,12 @@ class SubtitleService:
             "es": "Spanish",
             "fr": "French",
             "ja": "Japanese",
-            "ru": "Russian"
+            "ru": "Russian",
+            "it": "Italian",
+            "zh": "Chinese (Simplified)",
+            "tr": "Turkish",
+            "ko": "Korean",
+            "pt": "Portuguese"
         }
     
     def _extract_file_path_from_url(self, url: str) -> str:
@@ -35,18 +40,26 @@ class SubtitleService:
             raise Exception(f"Invalid storage URL format: {str(e)}")
     
     async def _translate_with_gpt(self, srt_content: str, target_language: str) -> str:
-        """Translate SRT content using GPT-3.5 while preserving format."""
+        """Translate SRT content using gpt-4o-mini while preserving format."""
         try:
             # Get full language name
             language_name = self.language_names.get(target_language, "English")
             
             # Prepare the prompt for GPT
-            system_prompt = f"""You are a professional subtitle translator. 
+            system_prompt = f"""You are a professional subtitle translator specializing in {language_name}.
             Translate the following SRT format subtitles to {language_name}.
-            Maintain the exact SRT format including timecodes and numbers.
-            Only translate the text content, keep timecodes and numbers unchanged."""
+            Important rules:
+            1. Maintain the exact SRT format including timecodes and numbers
+            2. Only translate the text content, keep timecodes and numbers unchanged
+            3. Preserve any special characters or formatting in the original
+            4. For {language_name}, ensure proper:
+               - Character set and encoding
+               - Cultural context and localization
+               - Formal/informal tone appropriate for the language
+               - For Korean, use appropriate honorifics and formality level
+            5. Keep translations concise to match subtitle timing"""
 
-            user_prompt = f"Here's the SRT content to translate:\n\n{srt_content}"
+            user_prompt = f"Here's the SRT content to translate to {language_name}:\n\n{srt_content}"
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
