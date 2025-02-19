@@ -6,6 +6,7 @@ import os
 class Settings(BaseSettings):
     # API Configuration
     API_V1_STR: str = "/api/v1"  # URL prefix for API version 1 endpoints (e.g., /api/v1/videos)
+    PROJECT_NAME: str = "Video Analyzer API"
     
     # JWT Configuration
     JWT_SECRET_KEY: str = "your-secret-key"  # Change in production
@@ -27,6 +28,9 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     OPENAI_API_KEY: str
     
+    # ElevenLabs Configuration
+    ELEVENLABS_API_KEY: str
+    
     # Storage Configuration
     STORAGE_BUCKET: str = "videos"  # This should match your bucket name in Supabase
     MAX_VIDEO_SIZE: int = 20 * 1024 * 1024  # 20MB
@@ -39,6 +43,10 @@ class Settings(BaseSettings):
     # Whisper API Configuration
     WHISPER_COST_PER_MINUTE: float = 0.006  # Cost in USD per minute
     MAX_VIDEO_DURATION_MINUTES: int = 60  # Maximum allowed video duration
+    
+    # Cost Configuration
+    COST_PER_MINUTE: float = 0.10
+    FREE_MINUTES: int = 50
     
     model_config = SettingsConfigDict(
         env_file=".env",

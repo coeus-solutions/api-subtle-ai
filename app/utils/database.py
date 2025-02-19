@@ -49,6 +49,7 @@ async def save_video_metadata(video_data: Dict[str, Any]) -> Optional[Dict[str, 
             "video_url": video_data["video_url"],
             "original_name": video_data["original_name"],
             "duration_minutes": video_data["duration_minutes"],
+            "language": video_data.get("language", "en"),
             "status": "queued"
         }
         
@@ -206,7 +207,7 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
     try:
         # Get videos for the user
         result = supabase.table('videos')\
-            .select('*')\
+            .select('*, dubbed_video_url, dubbing_id, is_dubbed_audio, burned_video_url')\
             .eq('user_id', user_id)\
             .order('created_at', desc=True)\
             .execute()
@@ -228,7 +229,11 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
                     "created_at": video.get("created_at"),
                     "updated_at": video.get("updated_at"),
                     "has_subtitles": False,
-                    "subtitle_languages": []
+                    "subtitle_languages": [],
+                    "dubbed_video_url": video.get("dubbed_video_url"),  # Include dubbed video URL
+                    "burned_video_url": video.get("burned_video_url"),  # Include burned video URL
+                    "dubbing_id": video.get("dubbing_id"),  # Include dubbing ID
+                    "is_dubbed_audio": video.get("is_dubbed_audio", False)  # Include dubbing status
                 }
 
                 if include_subtitles:
@@ -321,4 +326,63 @@ async def get_user_details(user_id: int) -> Optional[Dict[str, Any]]:
         }
     except Exception as e:
         logger.error(f"Error getting user details: {str(e)}")
-        return None 
+        return None
+
+async def update_video_dubbing(video_uuid: str, dubbing_data: Dict[str, Any]) -> bool:
+    """Update video dubbing information."""
+    try:
+        # Prepare update data
+        update_data = {
+            "dubbed_video_url": dubbing_data.get("dubbed_video_url"),
+            "dubbing_id": dubbing_data.get("dubbing_id"),
+            "is_dubbed_audio": dubbing_data.get("is_dubbed_audio", False)
+        }
+        
+        # Update video record
+        result = supabase.table('videos').update(update_data).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating video dubbing info for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating video dubbing info: {str(e)}")
+        return False
+
+async def update_video_burned_url(video_uuid: str, burned_video_url: str) -> bool:
+    """Update video's burned video URL."""
+    try:
+        result = supabase.table('videos').update({
+            'burned_video_url': burned_video_url,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating burned video URL for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating burned video URL: {str(e)}")
+        return False
+
+async def update_video_urls(video_uuid: str, processed_video_url: str) -> bool:
+    """Update both dubbed_video_url and burned_video_url for a video."""
+    try:
+        update_data = {
+            "dubbed_video_url": processed_video_url,
+            "burned_video_url": processed_video_url,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table('videos').update(update_data).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating video URLs for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating video URLs: {str(e)}")
+        return False 

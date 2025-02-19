@@ -1,8 +1,8 @@
 # Core Dependencies
 fastapi==0.104.1
 uvicorn==0.24.0
-pydantic==2.4.2
-pydantic-settings==2.0.3
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
 
 # Authentication
 python-jose[cryptography]==3.3.0
@@ -11,14 +11,20 @@ passlib[bcrypt]==1.7.4
 # File Handling
 python-multipart==0.0.6  # For file uploads
 moviepy==1.0.3  # For video duration validation
+h11>=0.14.0  # Updated for compatibility
 
 # Database and Storage
-supabase==2.0.3
+supabase==2.6.0  # Latest version with proxy support
+httpx[http2]==0.27.2  # Latest version with proper proxy support
 boto3==1.28.44
 
 # OpenAI Integration
-openai==1.3.5
+openai>=1.58.1  # For Whisper API
 aiohttp==3.9.1
+
+# Audio/Video Processing
+elevenlabs==1.51.0  # Latest version with proper client support
+ffmpeg-python==0.2.0  # For subtitle burning and video processing
 
 # Utilities
 python-dotenv==1.0.0

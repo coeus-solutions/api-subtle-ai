@@ -81,6 +81,20 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
+class VideoUploadRequest(BaseModel):
+    """Request model for video upload endpoint."""
+    language: SupportedLanguage = Field(
+        default=SupportedLanguage.ENGLISH,
+        description="Target language for subtitle generation"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "language": "en"
+            }
+        }
+
 # Response Models
 class MessageResponse(BaseModel):
     message: str
@@ -171,6 +185,7 @@ class VideoUploadResponse(BaseModel):
     duration_minutes: Optional[float] = Field(default=None)
     estimated_cost: Optional[float] = Field(default=None)
     detail: Optional[str] = None
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
 
     _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
     _round_cost = validator('estimated_cost', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
@@ -185,32 +200,66 @@ class VideoUploadResponse(BaseModel):
                 "status": "queued",
                 "duration_minutes": 5.50,
                 "estimated_cost": 0.55,
-                "detail": "Estimated processing cost: $0.55 for 5.50 minutes"
+                "detail": "Estimated processing cost: $0.55 for 5.50 minutes",
+                "language": "en"
             }
         }
 
 class SubtitleGenerationRequest(BaseModel):
     """Request model for subtitle generation endpoint."""
-    language: SupportedLanguage = Field(
-        default=SupportedLanguage.ENGLISH,
-        description="Target language for subtitle generation. Available languages: English (en), Spanish (es), French (fr), German (de), Chinese (zh), Japanese (ja), Korean (ko), Portuguese (pt), Italian (it), Hindi (hi)"
+    enable_dubbing: bool = Field(
+        default=False,
+        description="Whether to enable video dubbing using ElevenLabs"
     )
 
     class Config:
         json_schema_extra = {
             "example": {
-                "language": "es"  # Example: Request Spanish subtitles
+                "enable_dubbing": True  # Example: Enable dubbing with video's saved language
             }
         }
 
-class SubtitleGenerationResponse(BaseModel):
-    """Response model for subtitle generation endpoint."""
+class DubbingStatusResponse(BaseModel):
+    """Response model for checking dubbing status."""
     message: str
     video_uuid: str
-    subtitle_uuid: str
-    subtitle_url: str
+    dubbing_id: str
     language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
-    status: Optional[str] = "completed"
+    status: str = Field(
+        description="ElevenLabs dubbing status: 'dubbing' (in progress), 'dubbed' (completed), or 'failed'"
+    )
+    duration_minutes: Optional[float] = Field(default=None)
+    detail: Optional[str] = None
+    expected_duration_sec: Optional[float] = Field(default=None)
+
+    _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+    _round_expected_duration = validator('expected_duration_sec', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Dubbing status: dubbing",
+                "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "dubbing_id": "dub_123456789",
+                "language": "es",
+                "status": "dubbing",  # ElevenLabs status
+                "duration_minutes": 5.50,
+                "detail": "Current status from ElevenLabs: dubbing",
+                "expected_duration_sec": 330.0
+            }
+        }
+
+class DubbingResponse(BaseModel):
+    """Response model for getting dubbed video."""
+    message: str
+    video_uuid: str
+    dubbing_id: str
+    dubbed_video_url: str
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
+    status: str = Field(
+        default="dubbed",
+        description="ElevenLabs dubbing status: will always be 'dubbed' for successful responses"
+    )
     duration_minutes: Optional[float] = Field(default=None)
     processing_cost: Optional[float] = Field(default=None)
     detail: Optional[str] = None
@@ -221,15 +270,54 @@ class SubtitleGenerationResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
+                "message": "Dubbed video ready",
+                "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "dubbing_id": "dub_123456789",
+                "dubbed_video_url": "https://example.com/storage/dubbed_videos/video.mp4",
+                "language": "es",
+                "status": "dubbed",  # ElevenLabs status
+                "duration_minutes": 5.50,
+                "processing_cost": 0.55,
+                "detail": "Successfully retrieved dubbed video"
+            }
+        }
+
+class SubtitleGenerationResponse(BaseModel):
+    """Response model for subtitle generation endpoint."""
+    message: str
+    video_uuid: str
+    subtitle_uuid: Optional[str] = None
+    subtitle_url: Optional[str] = None
+    processed_video_url: Optional[str] = None  # URL of video with burned subtitles
+    dubbing_id: Optional[str] = None  # Added for dubbing support
+    dubbed_video_url: Optional[str] = None  # Added for dubbing support
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
+    status: str = "completed"
+    duration_minutes: Optional[float] = Field(default=None)
+    processing_cost: Optional[float] = Field(default=None)
+    detail: Optional[str] = None
+    expected_duration_sec: Optional[float] = Field(default=None)  # Added for dubbing support
+
+    _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+    _round_cost = validator('processing_cost', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+    _round_expected_duration = validator('expected_duration_sec', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
                 "message": "Subtitles generated successfully",
                 "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
                 "subtitle_uuid": "987fcdeb-89ab-12d3-a456-426614174000",
                 "subtitle_url": "https://example.com/storage/subtitles/subtitle.srt",
+                "processed_video_url": "https://example.com/storage/processed_videos/video_with_subtitles.mp4",  # Added example
+                "dubbing_id": "dub_123456789",  # Only present if dubbing enabled
+                "dubbed_video_url": "https://example.com/storage/dubbed_videos/video.mp4",  # Only present if dubbing enabled
                 "language": "es",
                 "status": "completed",
                 "duration_minutes": 5.50,
                 "processing_cost": 0.55,
-                "detail": "Successfully generated Spanish subtitles. Cost: $0.55"
+                "detail": "Successfully generated Spanish subtitles and processed video. Cost: $0.55",
+                "expected_duration_sec": 330.0  # Only present if dubbing enabled
             }
         }
 
@@ -258,6 +346,10 @@ class VideoResponse(BaseModel):
     has_subtitles: bool = False
     subtitle_languages: List[str] = []
     subtitles: Optional[List[VideoSubtitleInfo]] = None
+    dubbed_video_url: Optional[str] = None
+    burned_video_url: Optional[str] = None  # URL of video with burned subtitles
+    dubbing_id: Optional[str] = None
+    is_dubbed_audio: bool = Field(default=False)
 
     _round_duration = validator('duration_minutes', allow_reuse=True)(round_decimal)
 
@@ -266,3 +358,39 @@ class VideoListResponse(BaseModel):
     count: int
     videos: List[VideoResponse]
     detail: Optional[str] = None 
+
+class SubtitleBurningRequest(BaseModel):
+    """Request model for burning subtitles into video."""
+    subtitle_uuid: str = Field(
+        description="UUID of the subtitle file to burn into the video"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "subtitle_uuid": "987fcdeb-89ab-12d3-a456-426614174000"
+            }
+        }
+
+class SubtitleBurningResponse(BaseModel):
+    """Response model for subtitle burning endpoint."""
+    message: str
+    video_uuid: str
+    subtitle_uuid: str
+    burned_video_url: str
+    language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
+    status: str = "completed"
+    detail: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Subtitles burned successfully",
+                "video_uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "subtitle_uuid": "987fcdeb-89ab-12d3-a456-426614174000",
+                "burned_video_url": "https://example.com/storage/processed_videos/video_with_subtitles.mp4",
+                "language": "en",
+                "status": "completed",
+                "detail": "Successfully burned English subtitles into video"
+            }
+        } 
