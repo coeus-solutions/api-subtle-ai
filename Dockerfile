@@ -4,7 +4,7 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and fonts
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libavcodec-extra \
@@ -12,6 +12,13 @@ RUN apt-get update && apt-get install -y \
     libavfilter-dev \
     libass-dev \
     curl \
+    fonts-noto \
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
+    fonts-noto-color-emoji \
+    fonts-noto-ui-core \
+    fonts-noto-ui-extra \
+    fonts-noto-extra \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache

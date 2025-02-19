@@ -230,4 +230,36 @@ class DubbingService:
             logger.error(f"Error getting transcript: {str(e)}")
             return None
 
+    async def delete_dubbing(self, dubbing_id: str) -> bool:
+        """
+        Delete a dubbing project from ElevenLabs.
+        
+        Args:
+            dubbing_id: The ID of the dubbing project to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        try:
+            headers = {
+                "xi-api-key": self.api_key
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(
+                    f"{self.api_url}/{dubbing_id}",
+                    headers=headers
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Failed to delete dubbing project {dubbing_id}: {error_text}")
+                        return False
+                    
+                    logger.info(f"Successfully deleted dubbing project {dubbing_id}")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"Error deleting dubbing project {dubbing_id}: {str(e)}")
+            return False
+
 dubbing_service = DubbingService() 
