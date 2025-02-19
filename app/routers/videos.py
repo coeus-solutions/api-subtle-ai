@@ -62,8 +62,8 @@ async def upload_video(
     - Checks video duration
     - Validates remaining free minutes
     - Maximum duration: 60 minutes
-    - Cost: $0.10 per minute
-    - First 50 minutes (worth $5.00) are free
+    - Cost: $1.25 per minute
+    - First 30 minutes (worth $37.50) are free
     - Accepts target language for future subtitle generation
     
     Returns:
@@ -133,10 +133,11 @@ async def upload_video(
                 )
             
             minutes_remaining = user_details["minutes_remaining"]
+            allowed_minutes = user_details["allowed_minutes"]
             if minutes_remaining < duration and estimated_cost > 0:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=f"Insufficient free minutes. You have {minutes_remaining:.2f} minutes remaining, but the video is {duration:.2f} minutes long. Please upgrade your account or use a shorter video."
+                    detail=f"Insufficient free minutes. You have {minutes_remaining:.2f} minutes remaining out of {allowed_minutes:.2f} allowed minutes, but the video is {duration:.2f} minutes long. Please upgrade your account or use a shorter video."
                 )
 
         except HTTPException:
@@ -319,10 +320,11 @@ async def generate_subtitles(
                     )
                 
                 minutes_remaining = user_details["minutes_remaining"]
+                allowed_minutes = user_details["allowed_minutes"]
                 if minutes_remaining < duration and processing_cost > 0:
                     raise HTTPException(
                         status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                        detail=f"Insufficient free minutes. You have {minutes_remaining:.2f} minutes remaining, but the video is {duration:.2f} minutes long. Please upgrade your account or use a shorter video."
+                        detail=f"Insufficient free minutes. You have {minutes_remaining:.2f} minutes remaining out of {allowed_minutes:.2f} allowed minutes, but the video is {duration:.2f} minutes long. Please upgrade your account or use a shorter video."
                     )
                 
             finally:

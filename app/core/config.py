@@ -46,7 +46,8 @@ class Settings(BaseSettings):
     
     # Cost Configuration
     COST_PER_MINUTE: float = 0.10
-    FREE_MINUTES: int = 50
+    FREE_MINUTES: int = 30  # Changed from 50 to 30
+    ALLOWED_MINUTES_DEFAULT: int = 30  # Default allowed minutes for new users
     
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -32,6 +32,8 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
 async def create_user(user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Create a new user."""
     try:
+        # Add default allowed minutes
+        user_data["allowed_minutes"] = settings.ALLOWED_MINUTES_DEFAULT
         serialized_data = serialize_dict(user_data)
         result = supabase.table('users').insert(serialized_data).execute()
         return serialize_dict(result.data[0]) if result.data else None
@@ -309,9 +311,10 @@ async def get_user_details(user_id: int) -> Optional[Dict[str, Any]]:
         minutes_consumed = float(user.get('minutes_consumed', 0))
         free_minutes_used = float(user.get('free_minutes_used', 0))
         total_cost = float(user.get('total_cost', 0))
+        allowed_minutes = float(user.get('allowed_minutes', settings.ALLOWED_MINUTES_DEFAULT))
         
-        # Calculate remaining free minutes
-        free_minutes_remaining = max(0, 50.0 - free_minutes_used)  # 50 minutes = $5.00 at $0.10/minute
+        # Calculate remaining free minutes based on user's allowed minutes
+        free_minutes_remaining = max(0, allowed_minutes - free_minutes_used)
         
         return {
             "email": user["email"],
@@ -319,8 +322,9 @@ async def get_user_details(user_id: int) -> Optional[Dict[str, Any]]:
             "free_minutes_used": free_minutes_used,
             "total_cost": total_cost,
             "minutes_remaining": free_minutes_remaining,
-            "cost_per_minute": 0.10,
-            "free_minutes_allocation": 50.0,
+            "cost_per_minute": settings.COST_PER_MINUTE,
+            "free_minutes_allocation": allowed_minutes,  # Use user's allowed minutes
+            "allowed_minutes": allowed_minutes,  # Add allowed minutes to response
             "created_at": user.get("created_at"),
             "updated_at": user.get("updated_at")
         }

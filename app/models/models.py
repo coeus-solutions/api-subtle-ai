@@ -56,12 +56,14 @@ class User(BaseModelWithTimestamps):
     minutes_consumed: float = Field(default=0)
     free_minutes_used: float = Field(default=0)
     total_cost: float = Field(default=0)
+    allowed_minutes: float = Field(default=30.0)  # Default to 30 minutes
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
     _round_minutes_consumed = validator('minutes_consumed', allow_reuse=True)(round_decimal)
     _round_free_minutes_used = validator('free_minutes_used', allow_reuse=True)(round_decimal)
     _round_total_cost = validator('total_cost', allow_reuse=True)(round_decimal)
+    _round_allowed_minutes = validator('allowed_minutes', allow_reuse=True)(round_decimal)
 
 class Video(BaseModelWithTimestamps):
     id: Optional[int] = None
@@ -136,7 +138,8 @@ class UserDetailsResponse(BaseModel):
     total_cost: float = Field(default=0)
     minutes_remaining: float = Field(default=0)
     cost_per_minute: float = Field(default=0.10)
-    free_minutes_allocation: float = Field(default=50.0)  # $5.00 worth of free minutes at $0.10/minute
+    free_minutes_allocation: float = Field(default=30.0)  # Changed from 50.0 to 30.0
+    allowed_minutes: float = Field(default=30.0)  # Add allowed minutes field
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -146,17 +149,19 @@ class UserDetailsResponse(BaseModel):
     _round_minutes_remaining = validator('minutes_remaining', allow_reuse=True)(round_decimal)
     _round_cost_per_minute = validator('cost_per_minute', allow_reuse=True)(round_decimal)
     _round_free_minutes_allocation = validator('free_minutes_allocation', allow_reuse=True)(round_decimal)
+    _round_allowed_minutes = validator('allowed_minutes', allow_reuse=True)(round_decimal)
 
     class Config:
         json_schema_extra = {
             "example": {
                 "email": "user@example.com",
                 "minutes_consumed": 75.50,
-                "free_minutes_used": 50.00,
-                "total_cost": 2.55,  # (75.5 - 50.0) * $0.10
+                "free_minutes_used": 30.00,
+                "total_cost": 4.55,  # (75.5 - 30.0) * $0.10
                 "minutes_remaining": 0.00,
                 "cost_per_minute": 0.10,
-                "free_minutes_allocation": 50.00,
+                "free_minutes_allocation": 30.00,
+                "allowed_minutes": 30.00,
                 "created_at": "2024-01-29T12:00:00Z",
                 "updated_at": "2024-01-29T12:00:00Z"
             }
