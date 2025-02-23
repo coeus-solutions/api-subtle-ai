@@ -52,7 +52,8 @@ async def save_video_metadata(video_data: Dict[str, Any]) -> Optional[Dict[str, 
             "original_name": video_data["original_name"],
             "duration_minutes": video_data["duration_minutes"],
             "language": video_data.get("language", "en"),
-            "status": "queued"
+            "status": "queued",
+            "subtitle_styles": video_data.get("subtitle_styles")  # Add subtitle styles to the database insert
         }
         
         # Insert data
@@ -389,4 +390,21 @@ async def update_video_urls(video_uuid: str, processed_video_url: str) -> bool:
         return True
     except Exception as e:
         logger.error(f"Error updating video URLs: {str(e)}")
+        return False
+
+async def update_video_subtitle_styles(video_uuid: str, subtitle_styles: dict) -> bool:
+    """Update video's subtitle styles."""
+    try:
+        result = supabase.table('videos').update({
+            'subtitle_styles': subtitle_styles,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('uuid', video_uuid).execute()
+        
+        if not result.data:
+            logger.error(f"No data returned after updating subtitle styles for UUID: {video_uuid}")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating subtitle styles: {str(e)}")
         return False 

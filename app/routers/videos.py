@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Form
 from fastapi.responses import JSONResponse
-from typing import List
+from typing import List, Optional
 import os
 import uuid
 from datetime import datetime
@@ -24,7 +24,9 @@ from app.utils.database import (
     get_user_subtitles,
     update_video_dubbing,
     update_video_burned_url,
-    update_video_urls, get_subtitle_by_uuid
+    update_video_urls,
+    get_subtitle_by_uuid,
+    update_video_subtitle_styles
 )
 from app.routers.auth import get_current_user
 from app.models.models import (
@@ -39,7 +41,10 @@ from app.models.models import (
     SupportedLanguage,
     VideoUploadRequest,
     SubtitleBurningRequest,
-    SubtitleBurningResponse
+    SubtitleBurningResponse,
+    VideoUpdateRequest,
+    VideoUpdateResponse,
+    SubtitleStyles
 )
 import json
 import aiohttp
@@ -53,6 +58,7 @@ router = APIRouter()
 async def upload_video(
     file: UploadFile = File(...),
     language: SupportedLanguage = Form(default=SupportedLanguage.ENGLISH),
+    subtitle_styles: Optional[str] = Form(default=None),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -65,16 +71,19 @@ async def upload_video(
     - Cost: $1.25 per minute
     - First 30 minutes (worth $37.50) are free
     - Accepts target language for future subtitle generation
+    - Optional subtitle styles can be provided for customization
     
     Returns:
         - Video UUID and URL
         - Video duration in minutes
         - Estimated processing cost
         - Target language for subtitles
+        - Subtitle styles (if provided)
     """
     content = None
     file_path = None
     temp_file = None
+    parsed_subtitle_styles = None
 
     try:
         # Validate file exists
@@ -83,6 +92,23 @@ async def upload_video(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No file provided"
             )
+        
+        # Parse subtitle styles if provided
+        if subtitle_styles:
+            try:
+                parsed_subtitle_styles_dict = json.loads(subtitle_styles)
+                # Validate against SubtitleStyles model
+                parsed_subtitle_styles = SubtitleStyles(**parsed_subtitle_styles_dict)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid subtitle styles JSON format"
+                )
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid subtitle styles: {str(e)}"
+                )
         
         # Read file content
         try:
@@ -180,7 +206,8 @@ async def upload_video(
                 "video_url": file_url,
                 "original_name": file.filename,
                 "duration_minutes": duration,
-                "language": language.value
+                "language": language.value,
+                "subtitle_styles": parsed_subtitle_styles.dict() if parsed_subtitle_styles else None
             }            
 
             saved_video = await save_video_metadata(video_data)
@@ -209,6 +236,7 @@ async def upload_video(
             duration_minutes=round(duration, 2),
             estimated_cost=round(estimated_cost, 2),
             language=language,
+            subtitle_styles=parsed_subtitle_styles,
             detail=f"Estimated processing cost: ${estimated_cost:.2f} for {duration:.2f} minutes ({minutes_remaining:.2f} free minutes remaining)"
         )
         
@@ -1012,6 +1040,82 @@ async def burn_subtitles(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to burn subtitles: {str(e)}"
+        )
+
+@router.patch("/{video_uuid}", response_model=VideoUpdateResponse, status_code=status.HTTP_200_OK)
+async def update_video(
+    video_uuid: str,
+    request: VideoUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update video details.
+    Currently supports updating subtitle styles.
+    
+    Parameters:
+        - video_uuid: UUID of the video to update
+        - request: Update data including subtitle styles
+    """
+    try:
+        # Validate UUID format
+        try:
+            uuid.UUID(video_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid video UUID format"
+            )
+        
+        # Get video details
+        video = await get_video_by_uuid(video_uuid)
+        if not video:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video not found"
+            )
+        
+        # Check if user owns the video
+        if video["user_id"] != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to update this video"
+            )
+        
+        # Update subtitle styles if provided
+        if request.subtitle_styles:
+            if not await update_video_subtitle_styles(video_uuid, request.subtitle_styles.dict()):
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to update subtitle styles"
+                )
+        
+        # Get updated video details
+        updated_video = await get_video_by_uuid(video_uuid)
+        if not updated_video:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Failed to retrieve updated video details"
+            )
+        
+        # Convert subtitle_styles from JSON to SubtitleStyles model if it exists
+        subtitle_styles = None
+        if updated_video.get("subtitle_styles"):
+            subtitle_styles = SubtitleStyles(**updated_video["subtitle_styles"])
+        
+        # Create response with all video details and subtitle styles
+        response_data = {**updated_video}
+        if subtitle_styles:
+            response_data["subtitle_styles"] = subtitle_styles
+        
+        return VideoUpdateResponse(**response_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating video: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update video: {str(e)}"
         )
 
 async def validate_video_access(video_uuid: str, dubbing_id: str, user_id: int):

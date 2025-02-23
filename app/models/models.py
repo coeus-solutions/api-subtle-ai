@@ -41,6 +41,68 @@ class SupportedLanguage(str, Enum):
         }
         return names.get(code, code)
 
+class SubtitleStyles(BaseModel):
+    """Model for subtitle styling options"""
+    fontSize: str = Field(default="medium", description="Font size (small, medium, large)")
+    fontWeight: str = Field(default="normal", description="Font weight (normal, bold)")
+    fontStyle: str = Field(default="normal", description="Font style (normal, italic)")
+    color: str = Field(default="#FFFFFF", description="Text color in hex")
+    position: str = Field(default="bottom", description="Subtitle position (top, bottom)")
+    alignment: str = Field(default="center", description="Text alignment (left, center, right)")
+
+    @validator('fontSize')
+    def validate_font_size(cls, v):
+        allowed = ['small', 'medium', 'large']
+        if v.lower() not in allowed:
+            raise ValueError(f'fontSize must be one of {allowed}')
+        return v.lower()
+
+    @validator('fontWeight')
+    def validate_font_weight(cls, v):
+        allowed = ['normal', 'bold']
+        if v.lower() not in allowed:
+            raise ValueError(f'fontWeight must be one of {allowed}')
+        return v.lower()
+
+    @validator('fontStyle')
+    def validate_font_style(cls, v):
+        allowed = ['normal', 'italic']
+        if v.lower() not in allowed:
+            raise ValueError(f'fontStyle must be one of {allowed}')
+        return v.lower()
+
+    @validator('color')
+    def validate_color(cls, v):
+        if not v.startswith('#') or len(v) != 7:
+            raise ValueError('color must be a valid hex color (e.g., #FFFFFF)')
+        return v
+
+    @validator('position')
+    def validate_position(cls, v):
+        allowed = ['top', 'bottom']
+        if v.lower() not in allowed:
+            raise ValueError(f'position must be one of {allowed}')
+        return v.lower()
+
+    @validator('alignment')
+    def validate_alignment(cls, v):
+        allowed = ['left', 'center', 'right']
+        if v.lower() not in allowed:
+            raise ValueError(f'alignment must be one of {allowed}')
+        return v.lower()
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "fontSize": "medium",
+                "fontWeight": "normal",
+                "fontStyle": "normal",
+                "color": "#FFFFFF",
+                "position": "bottom",
+                "alignment": "center"
+            }
+        }
+
 class BaseModelWithTimestamps(BaseModel):
     class Config:
         json_encoders = {
@@ -75,6 +137,7 @@ class Video(BaseModelWithTimestamps):
     status: Optional[str] = "queued"
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    subtitle_styles: Optional[SubtitleStyles] = None
 
     _round_duration = validator('duration_minutes', allow_reuse=True)(round_decimal)
 
@@ -99,11 +162,23 @@ class VideoUploadRequest(BaseModel):
         default=SupportedLanguage.ENGLISH,
         description="Target language for subtitle generation"
     )
+    subtitle_styles: Optional[SubtitleStyles] = None
 
     class Config:
         json_schema_extra = {
             "example": {
-                "language": "en"
+                "language": "en",
+                "subtitle_styles": {
+                    "fontSize": "small",
+                    "fontFamily": "Helvetica",
+                    "fontWeight": "bold",
+                    "fontStyle": "normal",
+                    "color": "#4e2d2d",
+                    "backgroundColor": "#dbcccc",
+                    "position": "top",
+                    "alignment": "center",
+                    "opacity": 0.8
+                }
             }
         }
 
@@ -201,6 +276,7 @@ class VideoUploadResponse(BaseModel):
     estimated_cost: Optional[float] = Field(default=None)
     detail: Optional[str] = None
     language: SupportedLanguage = Field(default=SupportedLanguage.ENGLISH)
+    subtitle_styles: Optional[SubtitleStyles] = None
 
     _round_duration = validator('duration_minutes', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
     _round_cost = validator('estimated_cost', pre=True, allow_reuse=True)(lambda v: round_decimal(v) if v is not None else None)
@@ -216,7 +292,18 @@ class VideoUploadResponse(BaseModel):
                 "duration_minutes": 5.50,
                 "estimated_cost": 0.55,
                 "detail": "Estimated processing cost: $0.55 for 5.50 minutes",
-                "language": "en"
+                "language": "en",
+                "subtitle_styles": {
+                    "fontSize": "small",
+                    "fontFamily": "Helvetica",
+                    "fontWeight": "bold",
+                    "fontStyle": "normal",
+                    "color": "#4e2d2d",
+                    "backgroundColor": "#dbcccc",
+                    "position": "top",
+                    "alignment": "center",
+                    "opacity": 0.8
+                }
             }
         }
 
@@ -407,5 +494,58 @@ class SubtitleBurningResponse(BaseModel):
                 "language": "en",
                 "status": "completed",
                 "detail": "Successfully burned English subtitles into video"
+            }
+        }
+
+class VideoUpdateRequest(BaseModel):
+    """Request model for video update endpoint"""
+    subtitle_styles: Optional[SubtitleStyles] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "subtitle_styles": {
+                    "fontSize": "small",
+                    "fontFamily": "Helvetica",
+                    "fontWeight": "bold",
+                    "fontStyle": "normal",
+                    "color": "#4e2d2d",
+                    "backgroundColor": "#dbcccc",
+                    "position": "top",
+                    "alignment": "center",
+                    "opacity": 0.8
+                }
+            }
+        }
+
+class VideoUpdateResponse(VideoResponse):
+    """Response model for video update endpoint, extends VideoResponse to include subtitle styles"""
+    subtitle_styles: Optional[SubtitleStyles] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "video_url": "https://example.com/storage/videos/video.mp4",
+                "original_name": "my_video.mp4",
+                "duration_minutes": 5.50,
+                "status": "completed",
+                "has_subtitles": True,
+                "subtitle_languages": ["en"],
+                "dubbed_video_url": None,
+                "burned_video_url": None,
+                "dubbing_id": None,
+                "is_dubbed_audio": False,
+                "subtitle_styles": {
+                    "fontSize": "small",
+                    "fontFamily": "Helvetica",
+                    "fontWeight": "bold",
+                    "fontStyle": "normal",
+                    "color": "#4e2d2d",
+                    "backgroundColor": "#dbcccc",
+                    "position": "top",
+                    "alignment": "center",
+                    "opacity": 0.8
+                }
             }
         } 

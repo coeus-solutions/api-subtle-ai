@@ -48,18 +48,20 @@ class SubtitleService:
             # Prepare the prompt for GPT
             system_prompt = f"""You are a professional subtitle translator specializing in {language_name}.
             Translate the following SRT format subtitles to {language_name}.
-            Important rules:
-            1. Maintain the exact SRT format including timecodes and numbers
-            2. Only translate the text content, keep timecodes and numbers unchanged
-            3. Preserve any special characters or formatting in the original
-            4. For {language_name}, ensure proper:
+            CRITICAL RULES:
+            1. DO NOT add any markdown formatting (no backticks, no ```srt tags)
+            2. Output ONLY the raw SRT content
+            3. Maintain the exact SRT format including timecodes and numbers
+            4. Only translate the text content, keep timecodes and numbers unchanged
+            5. Preserve any special characters or formatting in the original
+            6. For {language_name}, ensure proper:
                - Character set and encoding
                - Cultural context and localization
                - Formal/informal tone appropriate for the language
                - For Korean, use appropriate honorifics and formality level
-            5. Keep translations concise to match subtitle timing"""
+            7. Keep translations concise to match subtitle timing"""
 
-            user_prompt = f"Here's the SRT content to translate to {language_name}:\n\n{srt_content}"
+            user_prompt = f"Translate this SRT content to {language_name}. Remember: Output ONLY the raw SRT content with NO markdown:\n\n{srt_content}"
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
