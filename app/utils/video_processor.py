@@ -91,16 +91,16 @@ class VideoProcessor:
         """
         try:
             # Font size handling - using fixed pixel sizes
-            font_size_setting = str(subtitle_styles.get("fontSize", "small")).lower()
-            base_font_size = self._get_font_size_multiplier(font_size_setting)
-            
-            # Scale down font size by 1.5 to match desired output size
-            # This compensates for the scaling that happens due to PlayRes values
-            final_font_size = round(base_font_size / 1.5, 2)
-            
-            print(f"[DEBUG] Font size calculation:")
-            print(f"[DEBUG] - Base font size for '{font_size_setting}': {base_font_size}px")
-            print(f"[DEBUG] - Final ASS font size: {final_font_size}px")
+            # If subtitle_styles is empty or None, use 24px as default
+            if not subtitle_styles:
+                base_font_size = 24
+                final_font_size = round(base_font_size / 1.5, 2)
+                print("[DEBUG] No custom styles found, using default font size: 24px")
+            else:
+                font_size_setting = str(subtitle_styles.get("fontSize", "small")).lower()
+                base_font_size = self._get_font_size_multiplier(font_size_setting)
+                final_font_size = round(base_font_size / 1.5, 2)
+                print(f"[DEBUG] Using custom font size: {font_size_setting} -> {final_font_size}px")
             
             # Color handling - convert from #RRGGBB to &HBBGGRR
             primary_color = self._convert_color_to_ass(subtitle_styles.get("color", "#FFFFFF"))
