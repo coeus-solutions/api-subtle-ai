@@ -272,8 +272,8 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
 async def update_user_usage(user_id: int, minutes: float, cost: float) -> bool:
     """Update user's usage statistics."""
     try:
-        # Get current user stats
-        user_result = supabase.table('users').select('minutes_consumed, free_minutes_used, total_cost').eq('id', user_id).execute()
+        # Get current user stats including allowed_minutes
+        user_result = supabase.table('users').select('minutes_consumed, free_minutes_used, total_cost, allowed_minutes').eq('id', user_id).execute()
         if not user_result.data:
             logger.error(f"No user found with ID: {user_id}")
             return False
@@ -282,11 +282,13 @@ async def update_user_usage(user_id: int, minutes: float, cost: float) -> bool:
         current_minutes = float(user.get('minutes_consumed', 0))
         current_free_minutes = float(user.get('free_minutes_used', 0))
         current_total_cost = float(user.get('total_cost', 0))
+        allowed_minutes = float(user.get('allowed_minutes', settings.ALLOWED_MINUTES_DEFAULT))
         
         # Calculate new values
         new_minutes = current_minutes + minutes
-        new_free_minutes = min(current_free_minutes + minutes, 50.0)  # Cap at 50 free minutes
-        new_total_cost = current_total_cost + (max(0, (current_free_minutes + minutes) - 50.0) * 0.10)  # Only charge after 50 minutes
+        new_free_minutes = min(current_free_minutes + minutes, allowed_minutes)  # Cap at user's allowed minutes
+        # Charge $1.25 per minute after allowed minutes are used
+        new_total_cost = current_total_cost + (max(0, (current_free_minutes + minutes) - allowed_minutes) * 1.25)
         
         # Update user stats
         result = supabase.table('users').update({
