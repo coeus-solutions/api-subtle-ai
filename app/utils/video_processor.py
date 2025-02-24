@@ -91,16 +91,18 @@ class VideoProcessor:
         """
         try:
             # Font size handling - using fixed pixel sizes
-            # If subtitle_styles is empty or None, use 24px as default
+            # If subtitle_styles is empty or None, use 24px as default and add outline/shadow
             if not subtitle_styles:
                 base_font_size = 24
                 final_font_size = round(base_font_size / 1.5, 2)
-                print("[DEBUG] No custom styles found, using default font size: 24px")
+                print("[DEBUG] No custom styles found, using default font size: 24px with outline/shadow")
+                outline_shadow = "1,1"  # Use outline and shadow when no custom styles
             else:
                 font_size_setting = str(subtitle_styles.get("fontSize", "small")).lower()
                 base_font_size = self._get_font_size_multiplier(font_size_setting)
                 final_font_size = round(base_font_size / 1.5, 2)
-                print(f"[DEBUG] Using custom font size: {font_size_setting} -> {final_font_size}px")
+                print(f"[DEBUG] Using custom font size: {font_size_setting} -> {final_font_size}px without outline/shadow")
+                outline_shadow = "0,0"  # No outline and shadow when custom styles are present
             
             # Color handling - convert from #RRGGBB to &HBBGGRR
             primary_color = self._convert_color_to_ass(subtitle_styles.get("color", "#FFFFFF"))
@@ -135,7 +137,7 @@ class VideoProcessor:
                 f'100,100,'  # ScaleX, ScaleY
                 f'0,0,'  # Spacing, Angle
                 f'1,'  # BorderStyle (1 for normal outline)
-                f'0,0,'  # Outline and Shadow set to 0 (disabled)
+                f'{outline_shadow},'  # Outline and Shadow (1,1 for no styles, 0,0 for custom styles)
                 f'{alignment_value},'  # Alignment
                 f'{margin_h},{margin_h},{margin_v},'  # MarginL, MarginR, MarginV
                 f'1\n\n'  # Encoding
@@ -148,7 +150,7 @@ class VideoProcessor:
             
         except Exception as e:
             logger.error(f"Error converting styles to ASS: {str(e)}")
-            # Return default style string on error
+            # Return default style string on error - use outline/shadow since this is a fallback
             return (
                 '[Script Info]\n'
                 'ScriptType: v4.00+\n'
@@ -156,7 +158,7 @@ class VideoProcessor:
                 'PlayResY: 288\n\n'
                 '[V4+ Styles]\n'
                 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n'
-                'Style: Default,Arial,24,&H00FFFFFF,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,2,20,20,40,1\n\n'
+                'Style: Default,Arial,24,&H00FFFFFF,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,1,2,20,20,40,1\n\n'  # Using outline/shadow 1,1 for fallback
                 '[Events]\n'
                 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
             )
