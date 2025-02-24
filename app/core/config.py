@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     MAX_VIDEO_DURATION_MINUTES: int = 60  # Maximum allowed video duration
     
     # Cost Configuration
-    COST_PER_MINUTE: float = 0.10
+    COST_PER_MINUTE: float = 1.25  # Changed from 0.10 to 1.25
     FREE_MINUTES: int = 30  # Changed from 50 to 30
     ALLOWED_MINUTES_DEFAULT: int = 30  # Default allowed minutes for new users
     

@@ -1,141 +1,111 @@
-# SubtleAI API
+# SubtleAI - AI-Powered Video Subtitle Generator
 
-A FastAPI backend system for AI-powered video subtitle generation and management.
+SubtleAI is a powerful API service that generates, translates, and burns subtitles into videos using advanced AI technologies.
 
 ## Features
 
-- User authentication with JWT
-- Video upload and management
-- AI-powered subtitle generation using OpenAI's Whisper
-- Multi-language subtitle support (English, German, Spanish, French, Japanese)
-- Secure file storage using Supabase
-- Usage tracking and free tier management (50 free minutes)
+### 1. Video Processing
+- Upload videos up to 20MB in size
+- Maximum video duration: 60 minutes
+- Supported formats: MP4, WebM, WAV
+- Automatic language detection for source audio
 
-## Prerequisites
+### 2. Subtitle Generation
+- High-accuracy transcription using OpenAI Whisper
+- Multiple language support:
+  - English (en)
+  - German (de)
+  - Spanish (es)
+  - French (fr)
+  - Japanese (ja)
+  - Russian (ru)
+  - Italian (it)
+  - Chinese (zh)
+  - Turkish (tr)
+  - Korean (ko)
+  - Portuguese (pt)
 
-- Python 3.8+
-- Supabase account
-- OpenAI API key
+### 3. Subtitle Customization
+- Font size options: small, medium, large
+- Font styles: normal, bold, italic
+- Custom colors with hex color codes
+- Position options: top, bottom
+- Alignment options: left, center, right
+- Optional outline and shadow effects
+
+### 4. Video Dubbing
+- AI-powered dubbing using ElevenLabs
+- Natural-sounding voice synthesis
+- Support for all available languages
+- Automatic subtitle generation for dubbed audio
+
+### 5. Subtitle Burning
+- Permanent subtitle embedding into videos
+- Support for custom styles
+- Compatible with both original and dubbed videos
+- High-quality output with FFmpeg processing
+
+## Pricing
+
+- First 30 minutes worth $37.50 are free
+- $1.25 per minute after free tier
+- Pricing includes:
+  - Video processing
+  - Subtitle generation
+  - Translation
+  - Dubbing (when enabled)
+  - Subtitle burning
+
+## Technical Details
+
+### API Endpoints
+- `/api/v1/videos/upload` - Upload new videos
+- `/api/v1/videos/{video_uuid}/generate_subtitles` - Generate subtitles
+- `/api/v1/videos/{video_uuid}/burn_subtitles` - Burn subtitles into video
+- `/api/v1/videos/{video_uuid}/dubbing/{dubbing_id}/status` - Check dubbing status
+- `/api/v1/videos/{video_uuid}/dubbing/{dubbing_id}/video` - Get dubbed video
+
+### Authentication
+- JWT-based authentication
+- Token expiration: 3000 minutes
+- Refresh tokens valid for 7 days
+
+### Storage
+- Supabase storage integration
+- Automatic file management
+- Secure URL generation
 
 ## Setup
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd api-video-analyzer
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
+1. Clone the repository
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Create `.env` file:
+3. Set up environment variables (copy .env.example to .env):
 ```bash
 cp .env.example .env
 ```
 
-5. Update the `.env` file with your credentials:
-- Add your Supabase URL and key
-- Add your OpenAI API key
-- Update JWT secret key
-
-## Running the Application
-
-1. Start the FastAPI server:
+4. Run with Docker:
 ```bash
-uvicorn main:app --reload
+docker-compose up --build
 ```
 
-2. Access the API documentation:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+## Development
 
-## API Endpoints
+### Requirements
+- Python 3.11+
+- FFmpeg
+- Docker (optional)
 
-### Authentication
-- POST `/api/v1/auth/register`: Register a new user
-- POST `/api/v1/auth/login`: Login and get JWT token
+### Environment Variables
+Required environment variables are listed in `.env.example`. Make sure to set:
+- Supabase credentials
+- OpenAI API key
+- ElevenLabs API key
+- JWT configuration
 
-### Videos
-- POST `/api/v1/videos/upload`: Upload a video (supports MP4, WebM, WAV)
-- GET `/api/v1/videos`: List all videos
-- DELETE `/api/v1/videos/{video_uuid}`: Delete a video and its subtitles
-- POST `/api/v1/videos/{video_uuid}/generate_subtitles`: Generate subtitles for a video
-
-### Subtitles
-- GET `/api/v1/subtitles`: List all subtitles
-- GET `/api/v1/subtitles/{subtitle_uuid}`: Download a subtitle file
-
-### Users
-- GET `/api/v1/users/me`: Get current user details and usage statistics
-
-## Database Schema
-
-The application uses Supabase with the following tables:
-
-1. Users
-   - id (int, primary key)
-   - uuid (uuid)
-   - email (string, unique)
-   - password_hash (string)
-   - minutes_consumed (decimal)
-   - free_minutes_used (decimal)
-   - total_cost (decimal)
-   - created_at (timestamp)
-   - updated_at (timestamp)
-
-2. Videos
-   - id (int, primary key)
-   - uuid (uuid)
-   - user_id (int, foreign key)
-   - video_url (string)
-   - original_name (string)
-   - duration_minutes (decimal)
-   - status (string)
-   - created_at (timestamp)
-   - updated_at (timestamp)
-
-3. Subtitles
-   - id (int, primary key)
-   - uuid (uuid)
-   - video_id (int, foreign key)
-   - subtitle_url (string)
-   - format (string)
-   - language (string)
-   - created_at (timestamp)
-   - updated_at (timestamp)
-
-## File Restrictions
-
-- Supported formats: MP4, WebM, WAV
-- Maximum file size: 20MB
-- Maximum video duration: 60 minutes
-
-## Pricing
-
-- First 50 minutes of video processing are free
-- After free tier: $0.10 per minute
-- Cost is calculated based on video duration
-
-## Security
-
-- JWT-based authentication
-- Password hashing using bcrypt
-- Input validation and sanitization
-- Protected API endpoints
-- Secure file storage with Supabase
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request 
+## License
+Proprietary software. All rights reserved. 
