@@ -95,13 +95,11 @@ class VideoProcessor:
             if not subtitle_styles:
                 base_font_size = 24
                 final_font_size = round(base_font_size / 1.5, 2)
-                print("[DEBUG] No custom styles found, using default font size: 24px with outline/shadow")
                 outline_shadow = "1,1"  # Use outline and shadow when no custom styles
             else:
                 font_size_setting = str(subtitle_styles.get("fontSize", "small")).lower()
                 base_font_size = self._get_font_size_multiplier(font_size_setting)
                 final_font_size = round(base_font_size / 1.5, 2)
-                print(f"[DEBUG] Using custom font size: {font_size_setting} -> {final_font_size}px without outline/shadow")
                 outline_shadow = "0,0"  # No outline and shadow when custom styles are present
             
             # Color handling - convert from #RRGGBB to &HBBGGRR
@@ -200,8 +198,8 @@ class VideoProcessor:
             video_path = video_url.split(f"{settings.STORAGE_BUCKET}/")[-1]
             subtitle_path = subtitle_url.split(f"{settings.STORAGE_BUCKET}/")[-1]
             
-            print(f"[DEBUG] Processing video: {video_path}")
-            print(f"[DEBUG] With subtitles: {subtitle_path}")
+            logger.info(f"Processing video: {video_path}")
+            logger.info(f"With subtitles: {subtitle_path}")
             
             # Download files
             if not download_file(video_path, temp_video.name):
@@ -216,21 +214,20 @@ class VideoProcessor:
                 width = int(video_info['width'])
                 height = int(video_info['height'])
                 
-                print(f"[DEBUG] Video dimensions: {width}x{height}")
+                logger.info(f"Video dimensions: {width}x{height}")
                 
                 # Calculate base font size based on video resolution
                 base_font_size = min(height // 32, 18)  # Cap at 18px for ultra-minimal look
-                print(f"[DEBUG] Base font size calculated: {base_font_size}")
+                logger.info(f"Base font size calculated: {base_font_size}")
                 
                 # Get video details and handle subtitle styles
                 video = await get_video_by_uuid(video_uuid)
                 if not video:
-                    print("[WARNING] Video not found, using default styles")
+                    logger.warning("Video not found, using default styles")
                     subtitle_styles = {}
                 else:
                     # Get subtitle styles, ensuring we have a dict
                     subtitle_styles = video.get("subtitle_styles", {})
-                    print(f"[DEBUG] Retrieved subtitle styles from DB: {subtitle_styles}")
                     
                     if subtitle_styles is None:
                         subtitle_styles = {}
@@ -238,14 +235,14 @@ class VideoProcessor:
                         try:
                             subtitle_styles = json.loads(subtitle_styles)
                         except json.JSONDecodeError:
-                            print("[WARNING] Failed to parse subtitle styles JSON")
+                            logger.warning("Failed to parse subtitle styles JSON")
                             subtitle_styles = {}
                 
-                print(f"[DEBUG] Using subtitle styles: {subtitle_styles}")
+                logger.info(f"Using subtitle styles: {subtitle_styles}")
                 
                 # Step 1: Convert SRT to basic ASS
-                print("[DEBUG] Converting SRT to ASS format...")
-                ffmpeg.input(temp_subtitle.name, sub_charenc='UTF-8').output(
+                logger.info("Converting SRT to ASS format...")
+                ffmpeg.input(temp_subtitle.name).output(
                     temp_ass.name,
                     f='ass',
                     **{'loglevel': 'error'}
@@ -273,67 +270,65 @@ class VideoProcessor:
                     with open(temp_styled_ass.name, 'w', encoding='utf-8') as f:
                         f.write(final_ass_content)
                     
-                    print("[DEBUG] Successfully created styled ASS file")
+                    logger.info("Successfully created styled ASS file")
                 else:
-                    print("[WARNING] Could not find style or events section in ASS file")
+                    logger.warning("Could not find style or events section in ASS file")
                     raise Exception("Invalid ASS file structure")
                 
                 # Step 5: Create FFmpeg stream with styled ASS subtitles
-                print("[DEBUG] Creating FFmpeg stream with styled subtitles...")
-                stream = ffmpeg.input(temp_video.name)
+                logger.info("Creating FFmpeg stream with styled subtitles...")
                 
-                # Apply subtitle filter using the styled ASS file
-                stream = ffmpeg.filter(
-                    stream,
+                # Create input stream
+                input_stream = ffmpeg.input(temp_video.name)
+                
+                # Apply subtitle filter
+                filtered = ffmpeg.filter(
+                    input_stream,
                     'ass',
                     temp_styled_ass.name
                 )
                 
-                # Output with same codec settings
-                stream = ffmpeg.output(
-                    stream,
+                # Output with proper audio mapping
+                output_stream = ffmpeg.output(
+                    filtered,
+                    input_stream.audio,  # Explicitly map the audio stream
                     temp_output.name,
-                    acodec='copy',
-                    vcodec='libx264',
-                    preset='medium',
-                    crf=23,
-                    map='0:a?',
-                    strict='-2'
+                    acodec='copy',  # Copy audio codec
+                    vcodec='libx264',  # Use H.264 for video
+                    preset='ultrafast',  # Use faster preset to reduce processing time
+                    map_metadata=0,  # Copy metadata from input
+                    **{'loglevel': 'error'}
                 )
                 
                 # Run FFmpeg command
-                print("[DEBUG] Running FFmpeg command...")
-                ffmpeg.run(
-                    stream,
+                logger.info("Running FFmpeg command...")
+                output_stream.overwrite_output().run(
                     capture_stdout=True,
-                    capture_stderr=True,
-                    overwrite_output=True
+                    capture_stderr=True
                 )
-                print("[DEBUG] FFmpeg processing completed successfully")
+                logger.info("FFmpeg processing completed successfully")
+                
+                # Generate output path
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"{timestamp}_{video_uuid[:8]}_subtitled_{language}.mp4"
+                output_path = f"processed_videos/{output_filename}"
+                
+                # Upload processed video
+                logger.info("Uploading processed video...")
+                with open(temp_output.name, 'rb') as f:
+                    if not upload_file(output_path, f.read(), 'video/mp4'):
+                        raise Exception("Failed to upload processed video")
+                
+                # Generate and return the public URL
+                processed_url = get_file_url(output_path)
+                logger.info(f"Successfully processed video: {processed_url}")
+                return processed_url
                 
             except ffmpeg.Error as e:
                 stderr = e.stderr.decode() if e.stderr else "Unknown error"
-                print(f"[ERROR] FFmpeg error: {stderr}")
                 raise Exception(f"Failed to process video: {stderr}")
-            
-            # Generate output path
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{timestamp}_{video_uuid[:8]}_subtitled_{language}.mp4"
-            output_path = f"processed_videos/{output_filename}"
-            
-            # Upload processed video
-            print("[DEBUG] Uploading processed video...")
-            with open(temp_output.name, 'rb') as f:
-                if not upload_file(output_path, f.read(), 'video/mp4'):
-                    raise Exception("Failed to upload processed video")
-            
-            # Generate and return the public URL
-            processed_url = get_file_url(output_path)
-            print(f"[DEBUG] Successfully processed video: {processed_url}")
-            return processed_url
-            
+                
         except Exception as e:
-            print(f"[ERROR] Error processing video: {str(e)}")
             logger.error(f"Error processing video: {str(e)}")
             return None
             
@@ -344,13 +339,13 @@ class VideoProcessor:
                     try:
                         os.unlink(temp_file.name)
                     except Exception as e:
-                        print(f"[ERROR] Error cleaning up temporary file: {str(e)}")
+                        logger.error(f"Error cleaning up temporary file: {str(e)}")
             
             if os.path.exists(self.temp_dir):
                 try:
                     os.rmdir(self.temp_dir)
                 except Exception as e:
-                    print(f"[ERROR] Error cleaning up temp directory: {str(e)}")
+                    logger.error(f"Error cleaning up temp directory: {str(e)}")
 
     def __del__(self):
         """Cleanup temporary directory on object destruction."""

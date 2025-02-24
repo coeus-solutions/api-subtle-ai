@@ -5,7 +5,7 @@
 -- Dumped from database version 15.8
 -- Dumped by pg_dump version 17.2 (Ubuntu 17.2-1.pgdg22.04+1)
 
--- Started on 2025-02-18 21:33:26 PKT
+-- Started on 2025-02-24 16:28:11 PKT
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -30,7 +30,7 @@ CREATE SCHEMA public;
 ALTER SCHEMA public OWNER TO pg_database_owner;
 
 --
--- TOC entry 3858 (class 0 OID 0)
+-- TOC entry 3861 (class 0 OID 0)
 -- Dependencies: 20
 -- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: pg_database_owner
 --
@@ -39,7 +39,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
--- TOC entry 458 (class 1255 OID 29531)
+-- TOC entry 460 (class 1255 OID 29531)
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -60,7 +60,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- TOC entry 274 (class 1259 OID 29664)
+-- TOC entry 276 (class 1259 OID 29664)
 -- Name: subtitles; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -79,8 +79,8 @@ CREATE TABLE public.subtitles (
 ALTER TABLE public.subtitles OWNER TO postgres;
 
 --
--- TOC entry 3861 (class 0 OID 0)
--- Dependencies: 274
+-- TOC entry 3864 (class 0 OID 0)
+-- Dependencies: 276
 -- Name: TABLE subtitles; Type: COMMENT; Schema: public; Owner: postgres
 --
 
@@ -88,8 +88,8 @@ COMMENT ON TABLE public.subtitles IS 'Stores generated subtitle files';
 
 
 --
--- TOC entry 3862 (class 0 OID 0)
--- Dependencies: 274
+-- TOC entry 3865 (class 0 OID 0)
+-- Dependencies: 276
 -- Name: COLUMN subtitles.format; Type: COMMENT; Schema: public; Owner: postgres
 --
 
@@ -97,7 +97,7 @@ COMMENT ON COLUMN public.subtitles.format IS 'Format of subtitle file: srt or vt
 
 
 --
--- TOC entry 275 (class 1259 OID 29673)
+-- TOC entry 277 (class 1259 OID 29673)
 -- Name: subtitles_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -113,8 +113,8 @@ CREATE SEQUENCE public.subtitles_id_seq
 ALTER SEQUENCE public.subtitles_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3864 (class 0 OID 0)
--- Dependencies: 275
+-- TOC entry 3867 (class 0 OID 0)
+-- Dependencies: 277
 -- Name: subtitles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -122,7 +122,7 @@ ALTER SEQUENCE public.subtitles_id_seq OWNED BY public.subtitles.id;
 
 
 --
--- TOC entry 276 (class 1259 OID 29674)
+-- TOC entry 278 (class 1259 OID 29674)
 -- Name: users; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -135,15 +135,16 @@ CREATE TABLE public.users (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     minutes_consumed numeric(10,2) DEFAULT 0,
     free_minutes_used numeric(10,2) DEFAULT 0,
-    total_cost numeric(10,2) DEFAULT 0
+    total_cost numeric(10,2) DEFAULT 0,
+    allowed_minutes double precision DEFAULT 30.0 NOT NULL
 );
 
 
 ALTER TABLE public.users OWNER TO postgres;
 
 --
--- TOC entry 3866 (class 0 OID 0)
--- Dependencies: 276
+-- TOC entry 3869 (class 0 OID 0)
+-- Dependencies: 278
 -- Name: TABLE users; Type: COMMENT; Schema: public; Owner: postgres
 --
 
@@ -151,7 +152,7 @@ COMMENT ON TABLE public.users IS 'Stores user account information';
 
 
 --
--- TOC entry 277 (class 1259 OID 29682)
+-- TOC entry 279 (class 1259 OID 29682)
 -- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -167,8 +168,8 @@ CREATE SEQUENCE public.users_id_seq
 ALTER SEQUENCE public.users_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3868 (class 0 OID 0)
--- Dependencies: 277
+-- TOC entry 3871 (class 0 OID 0)
+-- Dependencies: 279
 -- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -176,7 +177,7 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- TOC entry 278 (class 1259 OID 29683)
+-- TOC entry 280 (class 1259 OID 29683)
 -- Name: videos; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -194,15 +195,16 @@ CREATE TABLE public.videos (
     dubbing_id character varying,
     is_dubbed_audio boolean DEFAULT false,
     language character varying(10) DEFAULT 'en'::character varying,
-    burned_video_url text
+    burned_video_url text,
+    subtitle_styles jsonb
 );
 
 
 ALTER TABLE public.videos OWNER TO postgres;
 
 --
--- TOC entry 3870 (class 0 OID 0)
--- Dependencies: 278
+-- TOC entry 3873 (class 0 OID 0)
+-- Dependencies: 280
 -- Name: TABLE videos; Type: COMMENT; Schema: public; Owner: postgres
 --
 
@@ -210,8 +212,8 @@ COMMENT ON TABLE public.videos IS 'Stores uploaded video information';
 
 
 --
--- TOC entry 3871 (class 0 OID 0)
--- Dependencies: 278
+-- TOC entry 3874 (class 0 OID 0)
+-- Dependencies: 280
 -- Name: COLUMN videos.status; Type: COMMENT; Schema: public; Owner: postgres
 --
 
@@ -219,7 +221,7 @@ COMMENT ON COLUMN public.videos.status IS 'Status of video processing: queued, p
 
 
 --
--- TOC entry 279 (class 1259 OID 29692)
+-- TOC entry 281 (class 1259 OID 29692)
 -- Name: videos_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
@@ -235,8 +237,8 @@ CREATE SEQUENCE public.videos_id_seq
 ALTER SEQUENCE public.videos_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3873 (class 0 OID 0)
--- Dependencies: 279
+-- TOC entry 3876 (class 0 OID 0)
+-- Dependencies: 281
 -- Name: videos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
@@ -244,7 +246,7 @@ ALTER SEQUENCE public.videos_id_seq OWNED BY public.videos.id;
 
 
 --
--- TOC entry 3656 (class 2604 OID 29752)
+-- TOC entry 3658 (class 2604 OID 29752)
 -- Name: subtitles id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -252,7 +254,7 @@ ALTER TABLE ONLY public.subtitles ALTER COLUMN id SET DEFAULT nextval('public.su
 
 
 --
--- TOC entry 3662 (class 2604 OID 29753)
+-- TOC entry 3664 (class 2604 OID 29753)
 -- Name: users id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -260,7 +262,7 @@ ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_
 
 
 --
--- TOC entry 3669 (class 2604 OID 29754)
+-- TOC entry 3672 (class 2604 OID 29754)
 -- Name: videos id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -268,7 +270,7 @@ ALTER TABLE ONLY public.videos ALTER COLUMN id SET DEFAULT nextval('public.video
 
 
 --
--- TOC entry 3680 (class 2606 OID 29804)
+-- TOC entry 3683 (class 2606 OID 29804)
 -- Name: subtitles subtitles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -277,7 +279,7 @@ ALTER TABLE ONLY public.subtitles
 
 
 --
--- TOC entry 3682 (class 2606 OID 29806)
+-- TOC entry 3685 (class 2606 OID 29806)
 -- Name: subtitles subtitles_uuid_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -286,7 +288,7 @@ ALTER TABLE ONLY public.subtitles
 
 
 --
--- TOC entry 3686 (class 2606 OID 29808)
+-- TOC entry 3689 (class 2606 OID 29808)
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -295,7 +297,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 3688 (class 2606 OID 29810)
+-- TOC entry 3691 (class 2606 OID 29810)
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -304,7 +306,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 3690 (class 2606 OID 29812)
+-- TOC entry 3693 (class 2606 OID 29812)
 -- Name: users users_uuid_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -313,7 +315,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 3695 (class 2606 OID 29814)
+-- TOC entry 3698 (class 2606 OID 29814)
 -- Name: videos videos_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -322,7 +324,7 @@ ALTER TABLE ONLY public.videos
 
 
 --
--- TOC entry 3697 (class 2606 OID 29816)
+-- TOC entry 3700 (class 2606 OID 29816)
 -- Name: videos videos_uuid_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -331,7 +333,7 @@ ALTER TABLE ONLY public.videos
 
 
 --
--- TOC entry 3677 (class 1259 OID 29875)
+-- TOC entry 3680 (class 1259 OID 29875)
 -- Name: idx_subtitles_uuid; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -339,7 +341,7 @@ CREATE INDEX idx_subtitles_uuid ON public.subtitles USING btree (uuid);
 
 
 --
--- TOC entry 3678 (class 1259 OID 29876)
+-- TOC entry 3681 (class 1259 OID 29876)
 -- Name: idx_subtitles_video_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -347,7 +349,7 @@ CREATE INDEX idx_subtitles_video_id ON public.subtitles USING btree (video_id);
 
 
 --
--- TOC entry 3683 (class 1259 OID 29877)
+-- TOC entry 3686 (class 1259 OID 29877)
 -- Name: idx_users_email; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -355,7 +357,7 @@ CREATE INDEX idx_users_email ON public.users USING btree (email);
 
 
 --
--- TOC entry 3684 (class 1259 OID 29878)
+-- TOC entry 3687 (class 1259 OID 29878)
 -- Name: idx_users_uuid; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -363,7 +365,7 @@ CREATE INDEX idx_users_uuid ON public.users USING btree (uuid);
 
 
 --
--- TOC entry 3691 (class 1259 OID 29879)
+-- TOC entry 3694 (class 1259 OID 29879)
 -- Name: idx_videos_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -371,7 +373,7 @@ CREATE INDEX idx_videos_status ON public.videos USING btree (status);
 
 
 --
--- TOC entry 3692 (class 1259 OID 29880)
+-- TOC entry 3695 (class 1259 OID 29880)
 -- Name: idx_videos_user_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -379,7 +381,7 @@ CREATE INDEX idx_videos_user_id ON public.videos USING btree (user_id);
 
 
 --
--- TOC entry 3693 (class 1259 OID 29881)
+-- TOC entry 3696 (class 1259 OID 29881)
 -- Name: idx_videos_uuid; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -387,7 +389,7 @@ CREATE INDEX idx_videos_uuid ON public.videos USING btree (uuid);
 
 
 --
--- TOC entry 3700 (class 2620 OID 29889)
+-- TOC entry 3703 (class 2620 OID 29889)
 -- Name: subtitles update_subtitles_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -395,7 +397,7 @@ CREATE TRIGGER update_subtitles_updated_at BEFORE UPDATE ON public.subtitles FOR
 
 
 --
--- TOC entry 3701 (class 2620 OID 29890)
+-- TOC entry 3704 (class 2620 OID 29890)
 -- Name: users update_users_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -403,7 +405,7 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON public.users FOR EACH RO
 
 
 --
--- TOC entry 3702 (class 2620 OID 29891)
+-- TOC entry 3705 (class 2620 OID 29891)
 -- Name: videos update_videos_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -411,7 +413,7 @@ CREATE TRIGGER update_videos_updated_at BEFORE UPDATE ON public.videos FOR EACH 
 
 
 --
--- TOC entry 3698 (class 2606 OID 29954)
+-- TOC entry 3701 (class 2606 OID 29954)
 -- Name: subtitles subtitles_video_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -420,7 +422,7 @@ ALTER TABLE ONLY public.subtitles
 
 
 --
--- TOC entry 3699 (class 2606 OID 29959)
+-- TOC entry 3702 (class 2606 OID 29959)
 -- Name: videos videos_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -429,7 +431,7 @@ ALTER TABLE ONLY public.videos
 
 
 --
--- TOC entry 3859 (class 0 OID 0)
+-- TOC entry 3862 (class 0 OID 0)
 -- Dependencies: 20
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner
 --
@@ -441,8 +443,8 @@ GRANT USAGE ON SCHEMA public TO service_role;
 
 
 --
--- TOC entry 3860 (class 0 OID 0)
--- Dependencies: 458
+-- TOC entry 3863 (class 0 OID 0)
+-- Dependencies: 460
 -- Name: FUNCTION update_updated_at_column(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -452,8 +454,8 @@ GRANT ALL ON FUNCTION public.update_updated_at_column() TO service_role;
 
 
 --
--- TOC entry 3863 (class 0 OID 0)
--- Dependencies: 274
+-- TOC entry 3866 (class 0 OID 0)
+-- Dependencies: 276
 -- Name: TABLE subtitles; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -463,8 +465,8 @@ GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,TRUNCATE,UPDATE ON TABLE public.su
 
 
 --
--- TOC entry 3865 (class 0 OID 0)
--- Dependencies: 275
+-- TOC entry 3868 (class 0 OID 0)
+-- Dependencies: 277
 -- Name: SEQUENCE subtitles_id_seq; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -474,8 +476,8 @@ GRANT ALL ON SEQUENCE public.subtitles_id_seq TO service_role;
 
 
 --
--- TOC entry 3867 (class 0 OID 0)
--- Dependencies: 276
+-- TOC entry 3870 (class 0 OID 0)
+-- Dependencies: 278
 -- Name: TABLE users; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -485,8 +487,8 @@ GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,TRUNCATE,UPDATE ON TABLE public.us
 
 
 --
--- TOC entry 3869 (class 0 OID 0)
--- Dependencies: 277
+-- TOC entry 3872 (class 0 OID 0)
+-- Dependencies: 279
 -- Name: SEQUENCE users_id_seq; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -496,8 +498,8 @@ GRANT ALL ON SEQUENCE public.users_id_seq TO service_role;
 
 
 --
--- TOC entry 3872 (class 0 OID 0)
--- Dependencies: 278
+-- TOC entry 3875 (class 0 OID 0)
+-- Dependencies: 280
 -- Name: TABLE videos; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -507,8 +509,8 @@ GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,TRUNCATE,UPDATE ON TABLE public.vi
 
 
 --
--- TOC entry 3874 (class 0 OID 0)
--- Dependencies: 279
+-- TOC entry 3877 (class 0 OID 0)
+-- Dependencies: 281
 -- Name: SEQUENCE videos_id_seq; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -518,7 +520,7 @@ GRANT ALL ON SEQUENCE public.videos_id_seq TO service_role;
 
 
 --
--- TOC entry 2468 (class 826 OID 30003)
+-- TOC entry 2470 (class 826 OID 30003)
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
@@ -529,7 +531,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 
 
 --
--- TOC entry 2471 (class 826 OID 30004)
+-- TOC entry 2473 (class 826 OID 30004)
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
 --
 
@@ -540,7 +542,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON S
 
 
 --
--- TOC entry 2473 (class 826 OID 30005)
+-- TOC entry 2475 (class 826 OID 30005)
 -- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
@@ -551,7 +553,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIO
 
 
 --
--- TOC entry 2474 (class 826 OID 30006)
+-- TOC entry 2476 (class 826 OID 30006)
 -- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
 --
 
@@ -562,7 +564,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON F
 
 
 --
--- TOC entry 2475 (class 826 OID 30007)
+-- TOC entry 2477 (class 826 OID 30007)
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
@@ -573,7 +575,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,
 
 
 --
--- TOC entry 2477 (class 826 OID 30008)
+-- TOC entry 2479 (class 826 OID 30008)
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
 --
 
@@ -583,7 +585,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT,I
 ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,TRUNCATE,UPDATE ON TABLES TO service_role;
 
 
--- Completed on 2025-02-18 21:33:50 PKT
+-- Completed on 2025-02-24 16:28:32 PKT
 
 --
 -- PostgreSQL database dump complete
