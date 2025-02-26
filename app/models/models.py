@@ -25,21 +25,24 @@ class SupportedLanguage(str, Enum):
 
     @classmethod
     def get_language_name(cls, code: str) -> str:
-        """Get full language name from code"""
+        """Get full language name with code from code"""
         names = {
-            "en": "English",
-            "de": "German",
-            "es": "Spanish",
-            "fr": "French",
-            "ja": "Japanese",
-            "ru": "Russian",
-            "it": "Italian",
-            "zh": "Chinese",
-            "tr": "Turkish",
-            "ko": "Korean",
-            "pt": "Portuguese"
+            "en": "English (en)",
+            "de": "German (de)",
+            "es": "Spanish (es)",
+            "fr": "French (fr)",
+            "ja": "Japanese (ja)",
+            "ru": "Russian (ru)",
+            "it": "Italian (it)",
+            "zh": "Chinese (zh)",
+            "tr": "Turkish (tr)",
+            "ko": "Korean (ko)",
+            "pt": "Portuguese (pt)"
         }
         return names.get(code, code)
+
+    def __str__(self) -> str:
+        return self.get_language_name(self.value)
 
 class SubtitleStyles(BaseModel):
     """Model for subtitle styling options"""
@@ -437,19 +440,40 @@ class VideoSubtitleInfo(BaseModel):
     subtitle_url: str
     created_at: Optional[datetime] = None
 
+class VideoStatus(str, Enum):
+    """Video processing status"""
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+    @classmethod
+    def get_status_name(cls, status: str) -> str:
+        """Get display name for status."""
+        status_map = {
+            cls.QUEUED.value: "Queued",
+            cls.PROCESSING.value: "Processing",
+            cls.COMPLETED.value: "Completed",
+            cls.FAILED.value: "Failed"
+        }
+        return status_map.get(status, status)
+
+    def __str__(self) -> str:
+        return self.value
+
 class VideoResponse(BaseModel):
     uuid: str
     video_url: str
     original_name: Optional[str] = None
     duration_minutes: float = Field(default=0)
-    status: Optional[str] = "queued"
+    status: VideoStatus = Field(default=VideoStatus.QUEUED)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     has_subtitles: bool = False
     subtitle_languages: List[str] = []
     subtitles: Optional[List[VideoSubtitleInfo]] = None
     dubbed_video_url: Optional[str] = None
-    burned_video_url: Optional[str] = None  # URL of video with burned subtitles
+    burned_video_url: Optional[str] = None
     dubbing_id: Optional[str] = None
     is_dubbed_audio: bool = Field(default=False)
 
@@ -459,7 +483,11 @@ class VideoListResponse(BaseModel):
     message: str
     count: int
     videos: List[VideoResponse]
-    detail: Optional[str] = None 
+    detail: Optional[str] = None
+    page: int = Field(default=1, description="Current page number")
+    total_pages: int = Field(default=1, description="Total number of pages")
+    total: int = Field(default=0, description="Total number of videos")
+    per_page: int = Field(default=10, description="Number of videos per page")
 
 class SubtitleBurningRequest(BaseModel):
     """Request model for burning subtitles into video."""

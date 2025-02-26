@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Form, Query
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import os
@@ -44,7 +44,8 @@ from app.models.models import (
     SubtitleBurningResponse,
     VideoUpdateRequest,
     VideoUpdateResponse,
-    SubtitleStyles
+    SubtitleStyles,
+    VideoStatus
 )
 import json
 import aiohttp
@@ -409,55 +410,55 @@ async def generate_subtitles(
             else:
                 # Subtitle Generation Flow
                 logger.info(f"Starting subtitle generation flow for video {video_uuid} in language {video['language']}")
-                
-                # Generate subtitles
-                subtitle_result = await subtitle_service.generate_subtitles(
-                    video_url=video["video_url"],
-                    video_uuid=video_uuid,
+            
+            # Generate subtitles
+            subtitle_result = await subtitle_service.generate_subtitles(
+                video_url=video["video_url"],
+                video_uuid=video_uuid,
                     language=video["language"]
+            )
+            
+            if not subtitle_result or "subtitle_url" not in subtitle_result:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to generate subtitles"
                 )
-                
-                if not subtitle_result or "subtitle_url" not in subtitle_result:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to generate subtitles"
-                    )
-                
-                # Save subtitle metadata
-                subtitle_data = {
-                    "uuid": str(uuid.uuid4()),
-                    "video_id": video["id"],
-                    "subtitle_url": subtitle_result["subtitle_url"],
-                    "format": "srt",
+            
+            # Save subtitle metadata
+            subtitle_data = {
+                "uuid": str(uuid.uuid4()),
+                "video_id": video["id"],
+                "subtitle_url": subtitle_result["subtitle_url"],
+                "format": "srt",
                     "language": video["language"]
-                }
-                
-                saved_subtitle = await save_subtitle(subtitle_data)
-                if not saved_subtitle:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to save subtitle metadata"
-                    )
-                
-                # Update video status to completed
-                if not await update_video_status(video_uuid, "completed"):
-                    logger.warning(f"Failed to update video status to completed for video {video_uuid}")
-                
+            }
+            
+            saved_subtitle = await save_subtitle(subtitle_data)
+            if not saved_subtitle:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to save subtitle metadata"
+                )
+            
+            # Update video status to completed
+            if not await update_video_status(video_uuid, "completed"):
+                logger.warning(f"Failed to update video status to completed for video {video_uuid}")
+            
                 # Update user's usage statistics
                 if not await update_user_usage(current_user["id"], duration, processing_cost):
                     logger.error(f"Failed to update usage statistics for user {current_user['id']}")
                 
-                return SubtitleGenerationResponse(
-                    message="Subtitles generated successfully",
-                    video_uuid=video_uuid,
-                    subtitle_uuid=subtitle_data["uuid"],
-                    subtitle_url=subtitle_result["subtitle_url"],
+            return SubtitleGenerationResponse(
+                message="Subtitles generated successfully",
+                video_uuid=video_uuid,
+                subtitle_uuid=subtitle_data["uuid"],
+                subtitle_url=subtitle_result["subtitle_url"],
                     language=video.get("language", "en"),
-                    status="completed",
-                    duration_minutes=round(duration, 2),
-                    processing_cost=round(processing_cost, 2),
+                status="completed",
+                duration_minutes=round(duration, 2),
+                processing_cost=round(processing_cost, 2),
                     detail=f"Successfully generated {video['language']} subtitles. Cost: ${processing_cost:.2f} for {duration:.2f} minutes"
-                )
+            )
             
         except HTTPException:
             raise
@@ -605,14 +606,53 @@ async def delete_video(
 
 @router.get("/", response_model=VideoListResponse, status_code=status.HTTP_200_OK)
 async def list_videos(
-    include_subtitles: bool = False,
+    include_subtitles: bool = Query(
+        default=False,
+        description="Include detailed subtitle information for each video"
+    ),
+    page: int = Query(
+        default=1,
+        ge=1,
+        description="Page number"
+    ),
+    per_page: int = Query(
+        default=5,
+        ge=1,
+        le=100,
+        description="Items per page"
+    ),
+    search: Optional[str] = Query(
+        default=None,
+        description="Search term for video name"
+    ),
+    language: Optional[str] = Query(
+        default=None,
+        description="Filter by subtitle language",
+        enum=["en", "de", "es", "fr", "ja", "ru", "it", "zh", "tr", "ko", "pt"]
+    ),
+    is_dubbed: Optional[bool] = Query(
+        default=None,
+        description="Filter by dubbing status",
+        enum=[True, False]
+    ),
+    status: Optional[str] = Query(
+        default=None,
+        description="Filter by video status",
+        enum=["queued", "processing", "completed", "failed"]
+    ),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get all videos for the current user.
+    Get all videos for the current user with pagination and filtering.
     
     Parameters:
         - include_subtitles: If True, includes detailed subtitle information for each video
+        - page: Page number (starts from 1)
+        - per_page: Number of items per page (default 10, max 100)
+        - search: Search term to filter videos by name (case-insensitive)
+        - language: Filter by subtitle language
+        - is_dubbed: Filter by dubbing status
+        - status: Filter by video status
     """
     try:
         # Validate user ID
@@ -624,36 +664,54 @@ async def list_videos(
                 detail="Invalid user authentication"
             )
         
-        # Get all videos for the user
-        videos = await get_user_videos(user_id, include_subtitles)
-        
-        # Log the number of videos found
-        logger.info(f"Found {len(videos)} videos for user {user_id}")
-        
-        # Format the response to include dubbing information
-        formatted_videos = []
-        for video in videos:
-            video_data = {
-                **video,  # Include all existing video data
-                "dubbed_video_url": video.get("dubbed_video_url"),  # Include dubbed video URL
-                "dubbing_id": video.get("dubbing_id"),  # Include dubbing ID
-                "is_dubbed_audio": video.get("is_dubbed_audio", False)  # Include dubbing status
-            }
-            formatted_videos.append(VideoResponse(**video_data))
-        
-        return VideoListResponse(
-            message="Videos retrieved successfully",
-            count=len(formatted_videos),
-            videos=formatted_videos
+        # Get filtered and paginated videos
+        result = await get_user_videos(
+            user_id=user_id,
+            include_subtitles=include_subtitles,
+            page=page,
+            per_page=per_page,
+            search=search,
+            language=language,
+            is_dubbed=is_dubbed,
+            status=status
         )
         
-    except HTTPException:
-        raise
+        # Build filter description for the message
+        filters = []
+        if search:
+            filters.append(f'name contains "{search}"')
+        if language:
+            filters.append(f'language is {SupportedLanguage.get_language_name(language)}')
+        if is_dubbed is not None:
+            filters.append('is dubbed' if is_dubbed else 'is not dubbed')
+        if status:
+            filters.append(f'status is {VideoStatus.get_status_name(status)}')
+        
+        filter_text = f" (Filtered by: {', '.join(filters)})" if filters else ""
+        
+        # Log the results
+        logger.info(
+            f"Found {result['total']} total videos for user {user_id}"
+            f"{filter_text}, returning page {page} of {result['total_pages']}"
+        )
+        
+        return VideoListResponse(
+            message=f"Successfully retrieved videos (Page {page} of {result['total_pages']}){filter_text}",
+            count=len(result['videos']),
+            videos=result['videos'],
+            page=result['page'],
+            total_pages=result['total_pages'],
+            total=result['total'],
+            per_page=per_page
+        )
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        logger.error(f"Error retrieving videos: {str(e)}")
+        logger.error(f"Error in list_videos: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve videos: {str(e)}"
+            detail=f"An error occurred while retrieving videos: {str(e)}"
         )
 
 @router.get("/{video_uuid}/dubbing/{dubbing_id}/status", response_model=DubbingStatusResponse, status_code=status.HTTP_200_OK)

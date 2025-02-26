@@ -205,19 +205,79 @@ async def get_subtitle_by_uuid(subtitle_uuid: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Error getting subtitle by UUID: {str(e)}")
         return None
 
-async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List[Dict[str, Any]]:
-    """Get all videos for a user with optional subtitle information."""
+async def get_user_videos(
+    user_id: int,
+    include_subtitles: bool = False,
+    page: int = 1,
+    per_page: int = 10,
+    search: Optional[str] = None,
+    language: Optional[str] = None,
+    is_dubbed: Optional[bool] = None,
+    status: Optional[str] = None
+) -> dict:
+    """
+    Get all videos for a user with optional subtitle information, pagination, and filtering.
+    """
     try:
-        # Get videos for the user
-        result = supabase.table('videos')\
-            .select('*, dubbed_video_url, dubbing_id, is_dubbed_audio, burned_video_url')\
-            .eq('user_id', user_id)\
-            .order('created_at', desc=True)\
-            .execute()
+        # Calculate offset
+        offset = (page - 1) * per_page
+        
+        # Start building the base query for videos
+        base_query = supabase.table('videos').select('*', count='exact')
+        
+        # Apply base filter for user_id
+        base_query = base_query.eq('user_id', user_id)
+        
+        # Apply search if provided
+        if search:
+            base_query = base_query.ilike('original_name', f'%{search}%')
+        
+        # Apply language filter if provided
+        if language:
+            # Get video IDs that have subtitles in the specified language
+            subtitle_query = supabase.table('subtitles').select('video_id').eq('language', language)
+            subtitle_result = subtitle_query.execute()
+            if subtitle_result.data:
+                video_ids = [sub['video_id'] for sub in subtitle_result.data]
+                base_query = base_query.in_('id', video_ids)
+            else:
+                # If no videos have subtitles in the specified language, return empty result
+                return {
+                    "videos": [],
+                    "total": 0,
+                    "page": page,
+                    "total_pages": 0
+                }
+        
+        # Apply dubbing status filter if provided
+        if is_dubbed is not None:
+            base_query = base_query.eq('is_dubbed_audio', is_dubbed)
+        
+        # Apply status filter if provided
+        if status:
+            base_query = base_query.eq('status', status)
+        
+        # Execute count query first
+        count_result = base_query.execute()
+        total_count = count_result.count if hasattr(count_result, 'count') else 0
+        
+        # Calculate total pages
+        total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 0
+        
+        # Add pagination to the query
+        query = base_query.order('created_at', desc=True).range(offset, offset + per_page - 1)
+        
+        # Execute the final query
+        result = query.execute()
         
         if not result.data:
-            logger.info(f"No videos found for user {user_id}")
-            return []
+            logger.info(f"No videos found for user {user_id} with applied filters")
+            return {
+                "videos": [],
+                "total": total_count,
+                "page": page,
+                "total_pages": total_pages
+            }
         
         # Format the response
         formatted_data = []
@@ -233,10 +293,10 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
                     "updated_at": video.get("updated_at"),
                     "has_subtitles": False,
                     "subtitle_languages": [],
-                    "dubbed_video_url": video.get("dubbed_video_url"),  # Include dubbed video URL
-                    "burned_video_url": video.get("burned_video_url"),  # Include burned video URL
-                    "dubbing_id": video.get("dubbing_id"),  # Include dubbing ID
-                    "is_dubbed_audio": video.get("is_dubbed_audio", False)  # Include dubbing status
+                    "dubbed_video_url": video.get("dubbed_video_url"),
+                    "burned_video_url": video.get("burned_video_url"),
+                    "dubbing_id": video.get("dubbing_id"),
+                    "is_dubbed_audio": video.get("is_dubbed_audio", False)
                 }
 
                 if include_subtitles:
@@ -264,10 +324,20 @@ async def get_user_videos(user_id: int, include_subtitles: bool = False) -> List
                 logger.error(f"Error formatting video item: {str(e)}")
                 continue
         
-        return formatted_data
+        return {
+            "videos": formatted_data,
+            "total": total_count,
+            "page": page,
+            "total_pages": total_pages
+        }
     except Exception as e:
         logger.error(f"Error getting user videos: {str(e)}")
-        return []
+        return {
+            "videos": [],
+            "total": 0,
+            "page": page,
+            "total_pages": 0
+        }
 
 async def update_user_usage(user_id: int, minutes: float, cost: float) -> bool:
     """Update user's usage statistics."""

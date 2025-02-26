@@ -288,15 +288,15 @@ class VideoProcessor:
                     temp_styled_ass.name
                 )
                 
-                # Output with proper audio mapping
+                # Output with balanced settings for size and stability
                 output_stream = ffmpeg.output(
                     filtered,
-                    input_stream.audio,  # Explicitly map the audio stream
+                    input_stream.audio,  # Explicit audio mapping
                     temp_output.name,
-                    acodec='copy',  # Copy audio codec
-                    vcodec='libx264',  # Use H.264 for video
-                    preset='ultrafast',  # Use faster preset to reduce processing time
-                    map_metadata=0,  # Copy metadata from input
+                    acodec='copy',
+                    vcodec='libx264',
+                    preset='veryfast',  # Balance between speed and file size
+                    crf=23,  # Control file size while maintaining quality
                     **{'loglevel': 'error'}
                 )
                 
