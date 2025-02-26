@@ -295,7 +295,7 @@ class VideoProcessor:
                     temp_output.name,
                     acodec='copy',
                     vcodec='libx264',
-                    preset='veryfast',  # Balance between speed and file size
+                    preset='veryfast',  # Better for limited resources while still providing compression
                     crf=23,  # Control file size while maintaining quality
                     **{'loglevel': 'error'}
                 )
